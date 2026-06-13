@@ -1,24 +1,22 @@
 /**
  * ChatPresenterClientFactory
  * Factory for creating ChatPresenter instances on the client side
- * ✅ ใช้ LocalStorage repositories — ประวัติแชท/ตั้งค่า/ยอด token คงอยู่หลัง refresh
+ * ✅ ใช้ Http repositories — คุยกับ Turso (libsql SQLite) ผ่าน /api/* (ฝั่ง server)
+ *    ข้อมูลคงอยู่ใน DB กลาง ใช้ข้ามเครื่อง/เบราว์เซอร์ได้ (ไม่ผูก localStorage แล้ว)
  */
 
 "use client";
 
 import { ChatPresenter } from "./ChatPresenter";
-import { LocalStorageChatSessionRepository } from "@/src/infrastructure/repositories/localstorage/LocalStorageChatSessionRepository";
-import { LocalStorageChatSettingsRepository } from "@/src/infrastructure/repositories/localstorage/LocalStorageChatSettingsRepository";
-import { LocalStorageUsageLedgerRepository } from "@/src/infrastructure/repositories/localstorage/LocalStorageUsageLedgerRepository";
+import { HttpChatSessionRepository } from "@/src/infrastructure/repositories/http/HttpChatSessionRepository";
+import { HttpChatSettingsRepository } from "@/src/infrastructure/repositories/http/HttpChatSettingsRepository";
+import { HttpUsageLedgerRepository } from "@/src/infrastructure/repositories/http/HttpUsageLedgerRepository";
 
 export class ChatPresenterClientFactory {
   static create(): ChatPresenter {
-    const repository = new LocalStorageChatSessionRepository();
-    const settingsRepository = new LocalStorageChatSettingsRepository();
-    const usageLedger = new LocalStorageUsageLedgerRepository();
-
-    // ⏳ สลับเป็น Supabase Repository ได้ภายหลังเมื่อมี backend
-    // const repository = new SupabaseChatSessionRepository(supabase);
+    const repository = new HttpChatSessionRepository();
+    const settingsRepository = new HttpChatSettingsRepository();
+    const usageLedger = new HttpUsageLedgerRepository();
 
     return new ChatPresenter(repository, settingsRepository, usageLedger);
   }
