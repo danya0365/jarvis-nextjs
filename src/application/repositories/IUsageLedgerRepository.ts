@@ -15,8 +15,8 @@ export interface UsageLedgerEntry {
   completionTokens: number;
   /** true = ตัวเลขประมาณการ (upstream ไม่ส่ง usage จริง) */
   estimated: boolean;
-  /** ประเภทการเรียก — "chat" = ตอบผู้ใช้, "summary" = สรุปความจำ (optional, backward-compat) */
-  kind?: "chat" | "summary";
+  /** ประเภทการเรียก — "chat" = ตอบผู้ใช้, "summary" = สรุปความจำ, "agent" = ตอบผ่าน tool-calling loop (optional, backward-compat) */
+  kind?: "chat" | "summary" | "agent";
 }
 
 export type CreateUsageLedgerEntryData = Omit<UsageLedgerEntry, "id">;

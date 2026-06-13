@@ -79,6 +79,42 @@ async function bootstrap(): Promise<void> {
         kind TEXT
       )`,
       `CREATE INDEX IF NOT EXISTS idx_usage_date ON usage_ledger(date)`,
+
+      // --- Workspace: คลังข้อมูลที่ใช้ร่วมกันข้ามทุก session (AI แตะผ่าน tools) ---
+      `CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_name ON workspaces(name)`,
+
+      // records ยืดหยุ่น — เก็บข้อมูลทั่วไปเป็น JSON ตาม kind ที่ AI กำหนดเอง
+      `CREATE TABLE IF NOT EXISTS workspace_records (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        data TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_records_ws_kind
+        ON workspace_records(workspace_id, kind)`,
+
+      // transactions — การเงินเฉพาะทาง (รายรับ/รายจ่าย)
+      `CREATE TABLE IF NOT EXISTS workspace_transactions (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_tx_ws_date
+        ON workspace_transactions(workspace_id, date)`,
     ],
     "write"
   );

@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/src/presentation/components/shared/ThemeToggle";
 import { UsageStatsPanel } from "@/src/presentation/components/chat/UsageStatsPanel";
 import { ChatSettingsPanel } from "@/src/presentation/components/chat/ChatSettingsPanel";
 import { MemoryPanel } from "@/src/presentation/components/chat/MemoryPanel";
+import { WorkspacePanel } from "@/src/presentation/components/chat/WorkspacePanel";
 
 interface ChatViewProps {
   initialViewModel?: ChatViewModel;
@@ -197,6 +198,15 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
           </select>
 
           <button
+            onClick={actions.toggleWorkspacePanel}
+            title="Workspace — คลังข้อมูลที่ AI เข้าถึงได้"
+            aria-label="เปิด workspace"
+            className="w-9 h-9 rounded-lg border border-border bg-card hover:bg-muted transition-colors flex items-center justify-center"
+          >
+            🗂️
+          </button>
+
+          <button
             onClick={actions.toggleMemoryPanel}
             title="ความจำของแชทนี้"
             aria-label="เปิดความจำของแชท"
@@ -288,7 +298,9 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
                         {state.streamingText ||
                           (state.isSummarizing
                             ? "🧠 กำลังสรุปความจำเก่า..."
-                            : "กำลังคิด...")}
+                            : state.toolActivity
+                              ? `🔧 ${state.toolActivity}...`
+                              : "กำลังคิด...")}
                         <span className="inline-block w-2 h-4 ml-0.5 bg-primary animate-pulse align-text-bottom" />
                       </p>
                     </div>
@@ -391,6 +403,20 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
           onClose={actions.toggleMemoryPanel}
           onSummarize={actions.summarizeNow}
           onClear={actions.clearMemory}
+        />
+      )}
+
+      {/* Workspace panel */}
+      {state.isWorkspacePanelOpen && (
+        <WorkspacePanel
+          workspaces={state.workspaces}
+          detail={state.workspaceDetail}
+          isLoading={state.isWorkspaceLoading}
+          onClose={actions.toggleWorkspacePanel}
+          onCreate={actions.createWorkspace}
+          onDelete={actions.deleteWorkspace}
+          onOpenDetail={actions.openWorkspaceDetail}
+          onCloseDetail={actions.closeWorkspaceDetail}
         />
       )}
 

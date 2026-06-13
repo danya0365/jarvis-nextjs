@@ -16,8 +16,39 @@ import {
   ChatSettings,
   DEFAULT_CHAT_SETTINGS,
 } from "@/src/application/chat/settings";
+import { HttpWorkspaceRepository } from "@/src/infrastructure/repositories/http/HttpWorkspaceRepository";
+import type {
+  Workspace,
+  WorkspaceRecord,
+  WorkspaceTransaction,
+  FinanceSummary,
+} from "@/src/application/repositories/IWorkspaceRepository";
 
 const MESSAGES_END_ID = "chat-messages-end";
+
+export interface WorkspaceDetail {
+  workspaceId: string;
+  records: WorkspaceRecord[];
+  transactions: WorkspaceTransaction[];
+  summary: FinanceSummary;
+}
+
+/** ป้ายภาษาไทยบอกว่า AI กำลังทำอะไรกับ workspace */
+function toolActivityLabel(tool: string, workspace?: string): string {
+  const ws = workspace ? ` "${workspace}"` : "";
+  const map: Record<string, string> = {
+    list_workspaces: "ดูรายการ workspace",
+    create_workspace: `สร้าง workspace${ws}`,
+    list_records: `ค้นข้อมูลใน${ws || " workspace"}`,
+    add_record: `บันทึกข้อมูลลง${ws || " workspace"}`,
+    update_record: "แก้ไขข้อมูล",
+    delete_record: "ลบข้อมูล",
+    add_transaction: `บันทึกรายการเงิน${ws}`,
+    list_transactions: `ดูรายการเงิน${ws}`,
+    summarize_finance: `สรุปการเงิน${ws}`,
+  };
+  return map[tool] ?? `เรียกใช้ ${tool}`;
+}
 
 export interface ChatPresenterState {
   viewModel: ChatViewModel | null;
@@ -41,6 +72,13 @@ export interface ChatPresenterState {
   isMemoryPanelOpen: boolean;
   /** true = กำลังสรุปความจำก่อนส่งคำตอบ (โหมด summary) */
   isSummarizing: boolean;
+  /** ป้ายสถานะเมื่อ AI กำลังเรียก tool (เช่น "🔧 บันทึกรายการเงิน…") — null = ไม่ได้ทำ */
+  toolActivity: string | null;
+  isWorkspacePanelOpen: boolean;
+  workspaces: Workspace[];
+  /** รายละเอียด workspace ที่เปิดดูอยู่ (records + transactions + สรุปการเงิน) */
+  workspaceDetail: WorkspaceDetail | null;
+  isWorkspaceLoading: boolean;
 }
 
 export interface ChatPresenterActions {
@@ -67,6 +105,13 @@ export interface ChatPresenterActions {
   summarizeNow: () => Promise<void>;
   /** ล้างความจำของ session ปัจจุบัน */
   clearMemory: () => Promise<void>;
+  toggleWorkspacePanel: () => void;
+  loadWorkspaces: () => Promise<void>;
+  createWorkspace: (name: string, description?: string) => Promise<void>;
+  deleteWorkspace: (id: string) => Promise<void>;
+  /** เปิดดูรายละเอียด workspace (โหลด records + transactions + สรุป) */
+  openWorkspaceDetail: (id: string) => Promise<void>;
+  closeWorkspaceDetail: () => void;
   clearUsageStats: () => Promise<void>;
   /** "1.2K" / "350" — ตัวเลข token อ่านง่าย */
   formatTokens: (tokens: number) => string;
@@ -119,6 +164,15 @@ export function useChatPresenter(
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
   const [isMemoryPanelOpen, setIsMemoryPanelOpen] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [toolActivity, setToolActivity] = useState<string | null>(null);
+  const [isWorkspacePanelOpen, setIsWorkspacePanelOpen] = useState(false);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaceDetail, setWorkspaceDetail] =
+    useState<WorkspaceDetail | null>(null);
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
+
+  // client adapter สำหรับ UI workspace (agent loop ฝั่ง server ใช้ Turso repo ตรง)
+  const workspaceRepo = useMemo(() => new HttpWorkspaceRepository(), []);
 
   const activeSession = useMemo(() => {
     if (!viewModel || !activeSessionId) return null;
@@ -325,6 +379,11 @@ export function useChatPresenter(
             setIsSummarizing(status === "summarizing");
           }
         },
+        onToolEvent: (step) => {
+          if (isMountedRef.current) {
+            setToolActivity(toolActivityLabel(step.tool, step.workspace));
+          }
+        },
         signal: abortControllerRef.current.signal,
       });
 
@@ -352,6 +411,7 @@ export function useChatPresenter(
         setIsStreaming(false);
         setStreamingText("");
         setIsSummarizing(false);
+        setToolActivity(null);
       }
     }
   }, [activeSessionId, input, isStreaming, loadData, presenter]);
@@ -385,18 +445,108 @@ export function useChatPresenter(
   const toggleStatsPanel = useCallback(() => {
     setIsStatsPanelOpen((open) => !open);
     setIsSettingsPanelOpen(false);
+    setIsMemoryPanelOpen(false);
+    setIsWorkspacePanelOpen(false);
   }, []);
 
   const toggleSettingsPanel = useCallback(() => {
     setIsSettingsPanelOpen((open) => !open);
     setIsStatsPanelOpen(false);
     setIsMemoryPanelOpen(false);
+    setIsWorkspacePanelOpen(false);
   }, []);
 
   const toggleMemoryPanel = useCallback(() => {
     setIsMemoryPanelOpen((open) => !open);
     setIsStatsPanelOpen(false);
     setIsSettingsPanelOpen(false);
+    setIsWorkspacePanelOpen(false);
+  }, []);
+
+  const loadWorkspaces = useCallback(async () => {
+    setIsWorkspaceLoading(true);
+    try {
+      const list = await workspaceRepo.listWorkspaces();
+      if (isMountedRef.current) setWorkspaces(list);
+    } finally {
+      if (isMountedRef.current) setIsWorkspaceLoading(false);
+    }
+  }, [workspaceRepo]);
+
+  const toggleWorkspacePanel = useCallback(() => {
+    setIsWorkspacePanelOpen((open) => {
+      const next = !open;
+      if (next) void loadWorkspaces();
+      else setWorkspaceDetail(null);
+      return next;
+    });
+    setIsStatsPanelOpen(false);
+    setIsSettingsPanelOpen(false);
+    setIsMemoryPanelOpen(false);
+  }, [loadWorkspaces]);
+
+  const createWorkspace = useCallback(
+    async (name: string, description?: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      setError(null);
+      try {
+        await workspaceRepo.createWorkspace({ name: trimmed, description });
+        await loadWorkspaces();
+      } catch (err) {
+        if (isMountedRef.current) {
+          setError(err instanceof Error ? err.message : "สร้าง workspace ไม่สำเร็จ");
+        }
+      }
+    },
+    [loadWorkspaces, workspaceRepo]
+  );
+
+  const deleteWorkspace = useCallback(
+    async (id: string) => {
+      // confirm อยู่ใน hook เพื่อให้ View เป็น JSX ล้วน
+      if (!window.confirm("ต้องการลบ workspace นี้และข้อมูลทั้งหมดใช่ไหม?")) {
+        return;
+      }
+      setError(null);
+      try {
+        await workspaceRepo.deleteWorkspace(id);
+        if (isMountedRef.current) {
+          setWorkspaceDetail((current) =>
+            current?.workspaceId === id ? null : current
+          );
+        }
+        await loadWorkspaces();
+      } catch (err) {
+        if (isMountedRef.current) {
+          setError(err instanceof Error ? err.message : "ลบ workspace ไม่สำเร็จ");
+        }
+      }
+    },
+    [loadWorkspaces, workspaceRepo]
+  );
+
+  const openWorkspaceDetail = useCallback(
+    async (id: string) => {
+      setIsWorkspaceLoading(true);
+      try {
+        const [records, transactions, summary] = await Promise.all([
+          workspaceRepo.listRecords(id),
+          workspaceRepo.listTransactions(id),
+          workspaceRepo.summarizeFinance(id),
+        ]);
+        if (isMountedRef.current) {
+          setWorkspaceDetail({ workspaceId: id, records, transactions, summary });
+        }
+      } finally {
+        if (isMountedRef.current) setIsWorkspaceLoading(false);
+      }
+    },
+    [workspaceRepo]
+  );
+
+  const closeWorkspaceDetail = useCallback(() => {
+    setWorkspaceDetail(null);
   }, []);
 
   const summarizeNow = useCallback(async () => {
@@ -549,6 +699,11 @@ export function useChatPresenter(
       isSettingsPanelOpen,
       isMemoryPanelOpen,
       isSummarizing,
+      toolActivity,
+      isWorkspacePanelOpen,
+      workspaces,
+      workspaceDetail,
+      isWorkspaceLoading,
     },
     {
       loadData,
@@ -572,6 +727,12 @@ export function useChatPresenter(
       toggleMemoryPanel,
       summarizeNow,
       clearMemory,
+      toggleWorkspacePanel,
+      loadWorkspaces,
+      createWorkspace,
+      deleteWorkspace,
+      openWorkspaceDetail,
+      closeWorkspaceDetail,
       clearUsageStats,
       formatTokens,
       formatCostUsd,

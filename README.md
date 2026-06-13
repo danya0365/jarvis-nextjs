@@ -27,6 +27,7 @@ Streaming แบบ real-time · ประวัติแชตเก็บบ�
 - **📊 Monitor การใช้งาน** — เห็น token และค่าใช้จ่าย (USD) ของทุกคำตอบ ยอดรวมต่อ session และ dashboard สะสมทั้งหมด/วันนี้/แยกตามโมเดล (ยอดไม่หายแม้ลบแชต)
 - **✂️ บริหาร token ประหยัดเงิน** — เลือกส่งเฉพาะข้อความล่าสุดให้ AI แทนการส่ง history ทั้งหมด, จำกัดความยาวคำตอบ (max_tokens) และเห็น preview ก่อนส่งว่าจะใช้ ~กี่ token
 - **🧠 ความจำอัจฉริยะ (rolling summary)** — สรุปบทสนทนาเก่าเป็น "ความจำ" ของ session แล้วแนบให้ AI ทุกเทิร์น ส่ง token น้อยแต่ AI ยังจำเรื่องสำคัญได้ (สรุปอัตโนมัติเมื่อคุยยาว หรือกดสรุปเองได้ เลือกโมเดลถูกๆ มาสรุปได้ใน ⚙️) — เป็นโหมดเริ่มต้น
+- **🗂️ Workspace + AI จัดการข้อมูลเอง (tool-calling)** — คลังข้อมูลที่ใช้ร่วมกันข้ามทุกแชต (ข้อมูลบริษัท/รายรับ-รายจ่าย/โน้ต) AI **query และเพิ่ม/แก้/ลบข้อมูลเองได้** ผ่าน agentic loop ฝั่ง server เช่นบอก "บันทึกรายรับ 5000 วันนี้" หรือ "เดือนนี้กำไรเท่าไหร่" แล้ว AI ลงมือผ่าน tool ให้ทันที — เปิดดู/จัดการที่ปุ่ม 🗂️
 - **💾 ประวัติไม่หาย ใช้ข้ามเครื่องได้** — เก็บแชต/ตั้งค่า/ยอด token บน Turso (libsql SQLite) ผ่าน API route ฝั่ง server refresh หรือเปลี่ยนเบราว์เซอร์/อุปกรณ์ก็เห็นข้อมูลเดียวกัน
 - **🌗 Dark mode** — สลับ light/dark ได้ จำค่าไว้ และไม่มี flash ตอนโหลดหน้า (FOUC-free)
 - **🔐 API key ปลอดภัย** — เรียก WaveSpeed ผ่าน API route ฝั่ง server เท่านั้น key ไม่หลุดไป browser
@@ -118,8 +119,26 @@ ChatView ──► useChatPresenter ──► ChatPresenter.sendMessage()
         React state อัปเดตทีละ token ──► persist ครั้งเดียวตอนจบ
 ```
 
-- API route เป็นแค่ proxy — ส่ง `upstream.body` ต่อตรงๆ ไม่ parse กลางทาง (backpressure ดี, ไม่มี transform bug)
+- การแชตจริงส่งผ่าน `POST /api/agent` (agentic loop ด้านล่าง) ส่วน `/api/chat` เป็น proxy ตรงๆ ใช้ตอนสรุปความจำ — ส่ง `upstream.body` ต่อ ไม่ parse กลางทาง (backpressure ดี)
 - SSE parser ฝั่ง client ใช้ `TextDecoder` แบบ `{stream: true}` รองรับตัวอักษรไทย (multi-byte UTF-8) ที่ขาดกลาง chunk
+
+### Agent Loop (AI จัดการ workspace เอง)
+
+```
+ChatPresenter.sendMessage() ──► POST /api/agent (Node runtime)
+                                      │  inject: รายชื่อ workspace + นิยาม tools
+                                      ▼
+                            ┌── WaveSpeed (stream:false, tools) ◄──┐
+                            ▼                                       │ วนซ้ำ (≤6 รอบ)
+                  มี tool_calls?  ──yes──► executeTool() แตะ Turso ─┘ + emit SSE event:tool
+                            │ no
+                            ▼
+                  stream คำตอบสุดท้าย ──► SSE content + usage ──► client persist
+```
+
+- **tool รันฝั่ง server เท่านั้น** — เป็น interface เดียวที่ AI แตะ DB ได้ (query/เพิ่ม/แก้/ลบ workspace) จึงไม่ต้องแยก sandbox DB และ token ไม่หลุดไป client
+- tool คือ native OpenAI function-calling (ยืนยันว่า WaveSpeed forward ให้ทุกโมเดลที่ทดสอบ รวม MiniMax default) — `WORKSPACE_TOOLS` + `executeTool()` ใน `workspaceTools.ts`
+- ไม่ persist tool messages — history สะอาด ข้อมูลจริงอยู่ใน workspace DB อยู่แล้ว; usage รวมทุก step บันทึก ledger เป็น `kind: "agent"`
 - ยกเลิกกลางทางได้ผ่าน `AbortController` — signal ถูกส่งต่อถึง WaveSpeed จึงไม่มี request ค้าง
 
 ## 📁 โครงสร้างโปรเจกต์
@@ -127,7 +146,9 @@ ChatView ──► useChatPresenter ──► ChatPresenter.sendMessage()
 ```
 jarvis-nextjs/
 ├── app/
-│   ├── api/chat/route.ts            # POST proxy → WaveSpeed (streaming SSE)
+│   ├── api/chat/route.ts            # POST proxy → WaveSpeed (streaming SSE, ใช้ตอนสรุปความจำ)
+│   ├── api/agent/route.ts           # POST agentic loop — AI เรียก tool จัดการ workspace (SSE)
+│   ├── api/workspaces/**            # GET/POST/PATCH/DELETE workspace + records + transactions → Turso
 │   ├── api/sessions/route.ts        # GET/POST sessions → Turso
 │   ├── api/sessions/[id]/route.ts   # GET/PATCH/DELETE session → Turso
 │   ├── api/settings/route.ts        # GET/PUT settings → Turso
@@ -145,9 +166,11 @@ jarvis-nextjs/
 │   │   └── repositories/
 │   │       ├── IChatSessionRepository.ts
 │   │       ├── IChatSettingsRepository.ts
-│   │       └── IUsageLedgerRepository.ts  # บัญชีรายจ่าย token สะสม
+│   │       ├── IUsageLedgerRepository.ts  # บัญชีรายจ่าย token สะสม
+│   │       └── IWorkspaceRepository.ts    # คลังข้อมูลที่ AI เข้าถึงผ่าน tools
 │   ├── infrastructure/              # 🔌 Adapters — คุยกับโลกภายนอก
-│   │   ├── ai/WaveSpeedClient.ts    #    WaveSpeed API client (server-only)
+│   │   ├── ai/WaveSpeedClient.ts    #    WaveSpeed API client (server-only, รองรับ tools)
+│   │   ├── ai/workspaceTools.ts     #    นิยาม tool + executeTool (server-only)
 │   │   ├── db/turso.ts              #    libsql client singleton + ensureSchema (server-only)
 │   │   └── repositories/
 │   │       ├── turso/               #    persistence จริงบน Turso (server-only)
@@ -160,6 +183,7 @@ jarvis-nextjs/
 │       │   ├── chat/ChatSettingsPanel.tsx  # ตั้งค่าบริหาร token + โหมดความจำ
 │       │   ├── chat/UsageStatsPanel.tsx     # 📊 dashboard การใช้งาน
 │       │   ├── chat/MemoryPanel.tsx         # 🧠 ดู/สรุป/ล้างความจำของ session
+│       │   ├── chat/WorkspacePanel.tsx      # 🗂️ ดู/สร้าง/ลบ workspace + ข้อมูลที่ AI เก็บ
 │       │   └── shared/ThemeToggle.tsx
 │       └── presenters/chat/
 │           ├── ChatPresenter.ts     #    business logic + SSE parser
@@ -203,9 +227,11 @@ jarvis-nextjs/
 ## 🛣 Roadmap
 
 - [x] ย้าย persistence จาก localStorage → Turso (libsql SQLite)
-- [ ] Authentication + scope แชตต่อ user (ตอนนี้ Turso เก็บ dataset เดียวแชร์รวม)
+- [x] Workspace + AI tool-calling — AI query/จัดการข้อมูลเองได้
+- [ ] Authentication + scope workspace/แชตต่อ user (ตอนนี้เก็บ dataset เดียวแชร์รวม)
+- [ ] True token-streaming ระหว่าง agent loop (ตอนนี้ chunk คำตอบสุดท้าย)
+- [ ] ยืนยันก่อน AI ลบข้อมูล (confirmation gate) เผื่ออยากปลอดภัยขึ้น
 - [ ] Render คำตอบเป็น Markdown / code highlighting
-- [ ] System prompt ปรับแต่งได้ต่อ session
 
 ## 📄 License
 

@@ -89,6 +89,8 @@ export interface SendMessageParams {
   onToken: (fullTextSoFar: string) => void;
   /** แจ้งเฟสปัจจุบัน — "summarizing" = กำลังสรุปความจำก่อนส่ง, "streaming" = กำลังรอคำตอบ */
   onStatus?: (status: "summarizing" | "streaming") => void;
+  /** แจ้งเมื่อ AI เรียก tool ระหว่าง agent loop (สำหรับขึ้นสถานะ "🔧 กำลังค้นข้อมูล…") */
+  onToolEvent?: (step: { tool: string; workspace?: string }) => void;
   signal?: AbortSignal;
 }
 
@@ -392,7 +394,8 @@ export class ChatPresenter {
    * 5. บันทึกลง usage ledger (ยอดสะสมไม่หายแม้ลบแชต)
    */
   async sendMessage(params: SendMessageParams): Promise<ChatSession> {
-    const { sessionId, content, onToken, onStatus, signal } = params;
+    const { sessionId, content, onToken, onStatus, onToolEvent, signal } =
+      params;
 
     const [session, settings] = await Promise.all([
       this.repository.getById(sessionId),
@@ -461,7 +464,8 @@ export class ChatPresenter {
     let result: SseStreamResult = { text: "", usage: null, aborted: false };
 
     try {
-      const response = await fetch("/api/chat", {
+      // 🤖 ส่งเข้า agent loop — AI เรียก tool query/แก้ข้อมูล workspace เองได้
+      const response = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -483,7 +487,7 @@ export class ChatPresenter {
         throw new Error("ไม่ได้รับข้อมูลตอบกลับจาก AI");
       }
 
-      result = await this.readSseStream(response.body, onToken);
+      result = await this.readSseStream(response.body, onToken, onToolEvent);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         // ยกเลิกก่อน stream เริ่ม (เช่น ระหว่างรอ response) — ไม่มีข้อความให้เก็บ
@@ -530,7 +534,7 @@ export class ChatPresenter {
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,
         estimated: usage.estimated,
-        kind: "chat",
+        kind: "agent",
       });
     } catch (error) {
       console.error("Error appending usage ledger entry:", error);
@@ -728,7 +732,8 @@ export class ChatPresenter {
    */
   private async readSseStream(
     body: ReadableStream<Uint8Array>,
-    onToken: (fullTextSoFar: string) => void
+    onToken: (fullTextSoFar: string) => void,
+    onToolEvent?: (step: { tool: string; workspace?: string }) => void
   ): Promise<SseStreamResult> {
     const reader = body.getReader();
     const decoder = new TextDecoder("utf-8");
@@ -756,24 +761,50 @@ export class ChatPresenter {
               return { text: fullText, usage, aborted: false };
             }
 
+            let parsed: Record<string, unknown> | null = null;
             try {
-              const parsed = JSON.parse(payload);
-
-              const delta: string = parsed.choices?.[0]?.delta?.content ?? "";
-              if (delta) {
-                fullText += delta;
-                onToken(fullText);
-              }
-
-              if (parsed.usage) {
-                usage = {
-                  promptTokens: Number(parsed.usage.prompt_tokens) || 0,
-                  completionTokens:
-                    Number(parsed.usage.completion_tokens) || 0,
-                };
-              }
+              parsed = JSON.parse(payload);
             } catch {
-              // ข้าม payload ที่ parse ไม่ได้ (เช่น comment/keep-alive)
+              // payload ที่ parse ไม่ได้ (comment/keep-alive) — ข้าม
+            }
+            if (!parsed) continue;
+
+            // event เฉพาะของ agent loop — AI กำลังเรียก tool
+            const toolEvent = parsed.jarvis_tool as
+              | { tool?: unknown; workspace?: unknown }
+              | undefined;
+            if (toolEvent) {
+              onToolEvent?.({
+                tool: String(toolEvent.tool ?? ""),
+                workspace:
+                  typeof toolEvent.workspace === "string"
+                    ? toolEvent.workspace
+                    : undefined,
+              });
+              continue;
+            }
+            // agent loop แจ้ง error กลางทาง → โยนให้ catch ภายนอกจัดการ
+            if (parsed.jarvis_error) {
+              throw new Error(String(parsed.jarvis_error));
+            }
+
+            const choices = parsed.choices as
+              | Array<{ delta?: { content?: string } }>
+              | undefined;
+            const delta = choices?.[0]?.delta?.content ?? "";
+            if (delta) {
+              fullText += delta;
+              onToken(fullText);
+            }
+
+            const rawUsage = parsed.usage as
+              | { prompt_tokens?: unknown; completion_tokens?: unknown }
+              | undefined;
+            if (rawUsage) {
+              usage = {
+                promptTokens: Number(rawUsage.prompt_tokens) || 0,
+                completionTokens: Number(rawUsage.completion_tokens) || 0,
+              };
             }
           }
         }
