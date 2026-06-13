@@ -23,14 +23,14 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { messages?: unknown; model?: unknown };
+  let body: { messages?: unknown; model?: unknown; maxTokens?: unknown };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "รูปแบบคำขอไม่ถูกต้อง" }, { status: 400 });
   }
 
-  const { messages, model } = body;
+  const { messages, model, maxTokens } = body;
 
   const isValidMessages =
     Array.isArray(messages) &&
@@ -50,12 +50,24 @@ export async function POST(req: Request) {
     );
   }
 
+  // maxTokens เป็น optional — รับเฉพาะจำนวนเต็มบวกในช่วงสมเหตุสมผล
+  const maxTokensValue =
+    typeof maxTokens === "number" &&
+    Number.isInteger(maxTokens) &&
+    maxTokens >= 1 &&
+    maxTokens <= 32768
+      ? maxTokens
+      : undefined;
+
   try {
     const upstream = await client.streamChatCompletion(
       {
         model: typeof model === "string" && model ? model : DEFAULT_MODEL,
         messages: messages.map(({ role, content }) => ({ role, content })),
         stream: true,
+        // ขอ usage จริง (prompt/completion tokens) มากับ chunk สุดท้ายของ stream
+        stream_options: { include_usage: true },
+        ...(maxTokensValue !== undefined && { max_tokens: maxTokensValue }),
       },
       // propagate abort จาก client ไป upstream — กด "หยุด" แล้ว request ไม่ค้าง
       req.signal

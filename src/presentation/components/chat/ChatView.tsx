@@ -3,6 +3,9 @@
 import { ChatViewModel } from "@/src/presentation/presenters/chat/ChatPresenter";
 import { useChatPresenter } from "@/src/presentation/presenters/chat/useChatPresenter";
 import { ThemeToggle } from "@/src/presentation/components/shared/ThemeToggle";
+import { UsageStatsPanel } from "@/src/presentation/components/chat/UsageStatsPanel";
+import { ChatSettingsPanel } from "@/src/presentation/components/chat/ChatSettingsPanel";
+import { MemoryPanel } from "@/src/presentation/components/chat/MemoryPanel";
 
 interface ChatViewProps {
   initialViewModel?: ChatViewModel;
@@ -161,6 +164,20 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
             {state.activeSession?.title ?? "แชท AI"}
           </h1>
 
+          {/* ยอด token/ค่าใช้จ่ายรวมของ session นี้ */}
+          {state.sessionUsage.hasUsage && (
+            <span
+              className="hidden lg:block text-xs text-muted-foreground whitespace-nowrap"
+              title="ยอดรวมของ session นี้ (input/output tokens · ค่าใช้จ่ายโดยประมาณ)"
+            >
+              {state.sessionUsage.hasEstimated && "~"}↓
+              {actions.formatTokens(state.sessionUsage.promptTokens)} ↑
+              {actions.formatTokens(state.sessionUsage.completionTokens)}
+              {" · "}
+              {actions.formatCostUsd(state.sessionUsage.costUsd)}
+            </span>
+          )}
+
           <select
             value={state.activeSession?.model ?? viewModel.defaultModel}
             onChange={(e) => actions.setModel(e.target.value)}
@@ -168,12 +185,43 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
             title="เลือกโมเดล AI"
             className="max-w-44 sm:max-w-60 px-3 py-2 text-sm rounded-lg bg-card border border-input focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
           >
-            {viewModel.models.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.label}
-              </option>
+            {viewModel.modelGroups.map((group) => (
+              <optgroup key={group.vendor} label={group.vendor}>
+                {group.models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
+
+          <button
+            onClick={actions.toggleMemoryPanel}
+            title="ความจำของแชทนี้"
+            aria-label="เปิดความจำของแชท"
+            className="w-9 h-9 rounded-lg border border-border bg-card hover:bg-muted transition-colors flex items-center justify-center"
+          >
+            🧠
+          </button>
+
+          <button
+            onClick={actions.toggleStatsPanel}
+            title="การใช้งาน token"
+            aria-label="เปิดสรุปการใช้งาน token"
+            className="w-9 h-9 rounded-lg border border-border bg-card hover:bg-muted transition-colors flex items-center justify-center"
+          >
+            📊
+          </button>
+
+          <button
+            onClick={actions.toggleSettingsPanel}
+            title="ตั้งค่าบริหาร token"
+            aria-label="เปิดตั้งค่าบริหาร token"
+            className="w-9 h-9 rounded-lg border border-border bg-card hover:bg-muted transition-colors flex items-center justify-center"
+          >
+            ⚙️
+          </button>
 
           <ThemeToggle />
         </header>
@@ -208,7 +256,7 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
                           : "bg-card border border-border rounded-bl-md"
                       }`}
                     >
-                      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                      <p className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">
                         {message.content}
                       </p>
                       <p
@@ -219,6 +267,14 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
                         }`}
                       >
                         {actions.formatTime(message.createdAt)}
+                        {actions.formatMessageUsage(message) && (
+                          <span
+                            className="ml-2"
+                            title="token ที่ใช้ (input/output) · ค่าใช้จ่ายโดยประมาณ"
+                          >
+                            {actions.formatMessageUsage(message)}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -228,8 +284,11 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
                 {state.isStreaming && (
                   <div className="flex justify-start">
                     <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-3 bg-card border border-border">
-                      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                        {state.streamingText || "กำลังคิด..."}
+                      <p className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">
+                        {state.streamingText ||
+                          (state.isSummarizing
+                            ? "🧠 กำลังสรุปความจำเก่า..."
+                            : "กำลังคิด...")}
                         <span className="inline-block w-2 h-4 ml-0.5 bg-primary animate-pulse align-text-bottom" />
                       </p>
                     </div>
@@ -244,6 +303,28 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
 
         {/* Composer */}
         <div className="border-t border-border bg-card px-4 py-3">
+          {/* Context indicator — เห็นก่อนส่งว่ากำลังจะจ่ายเท่าไหร่ */}
+          {state.contextPreview.totalCount > 0 && (
+            <div className="max-w-3xl mx-auto mb-1.5">
+              <p
+                className="text-xs text-muted-foreground"
+                title="จำนวนข้อความที่จะถูกส่งให้ AI ตามการตั้งค่าบริหาร token (⚙️)"
+              >
+                {state.contextPreview.hasMemory && <span>🧠 ความจำ + </span>}
+                จะส่ง {state.contextPreview.sendCount}/
+                {state.contextPreview.totalCount} ข้อความ (~
+                {actions.formatTokens(state.contextPreview.estimatedTokens)}{" "}
+                tokens)
+                {state.contextPreview.sendCount <
+                  state.contextPreview.totalCount &&
+                  (state.contextPreview.hasMemory ? (
+                    <span> · สรุปข้อความเก่าเป็นความจำเพื่อประหยัด token</span>
+                  ) : (
+                    <span> · ตัดข้อความเก่าออกเพื่อประหยัด token</span>
+                  ))}
+              </p>
+            </div>
+          )}
           <div className="max-w-3xl mx-auto flex items-end gap-2">
             <textarea
               value={state.input}
@@ -278,6 +359,40 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
           </div>
         </div>
       </main>
+
+      {/* Usage stats panel */}
+      {state.isStatsPanelOpen && (
+        <UsageStatsPanel
+          summary={viewModel.usageSummary}
+          onClose={actions.toggleStatsPanel}
+          onClear={actions.clearUsageStats}
+          formatTokens={actions.formatTokens}
+          formatCostUsd={actions.formatCostUsd}
+        />
+      )}
+
+      {/* Token management settings panel */}
+      {state.isSettingsPanelOpen && (
+        <ChatSettingsPanel
+          settings={viewModel.settings}
+          modelGroups={viewModel.modelGroups}
+          onClose={actions.toggleSettingsPanel}
+          onUpdate={actions.updateSettings}
+        />
+      )}
+
+      {/* Memory panel */}
+      {state.isMemoryPanelOpen && (
+        <MemoryPanel
+          memory={state.activeSession?.memory}
+          foldedCount={state.activeSession?.memoryUpToCount ?? 0}
+          totalCount={state.activeSession?.messages.length ?? 0}
+          isSummarizing={state.isSummarizing}
+          onClose={actions.toggleMemoryPanel}
+          onSummarize={actions.summarizeNow}
+          onClear={actions.clearMemory}
+        />
+      )}
 
       {/* Error Toast */}
       {state.error && viewModel && (

@@ -22,8 +22,11 @@ Streaming แบบ real-time · ประวัติแชตเก็บใ�
 
 - **💬 แชตกับ AI แบบ streaming** — คำตอบทยอยขึ้นทีละ token แบบ real-time ผ่าน Server-Sent Events พร้อมปุ่มหยุดกลางคัน (เก็บคำตอบบางส่วนไว้ให้)
 - **🗂️ หลาย session แยกอิสระ** — สร้าง เปลี่ยนชื่อ ลบ และสลับบทสนทนาได้ไม่จำกัด แต่ละ session จำบริบทของตัวเอง
-- **🧠 คุยต่อเนื่อง** — ส่งประวัติทั้งหมดของ session ให้ LLM ทุกเทิร์น AI จึงจำสิ่งที่คุยกันก่อนหน้าได้
+- **🧠 คุยต่อเนื่อง** — ส่งประวัติของ session ให้ LLM ทุกเทิร์น AI จึงจำสิ่งที่คุยกันก่อนหน้าได้
 - **🎛️ เลือกโมเดลได้ต่อ session** — ค่าเริ่มต้น MiniMax M2.7 และสลับเป็น Claude, GPT, Gemini, DeepSeek ได้จาก dropdown (WaveSpeed รองรับ 290+ models)
+- **📊 Monitor การใช้งาน** — เห็น token และค่าใช้จ่าย (USD) ของทุกคำตอบ ยอดรวมต่อ session และ dashboard สะสมทั้งหมด/วันนี้/แยกตามโมเดล (ยอดไม่หายแม้ลบแชต)
+- **✂️ บริหาร token ประหยัดเงิน** — เลือกส่งเฉพาะข้อความล่าสุดให้ AI แทนการส่ง history ทั้งหมด, จำกัดความยาวคำตอบ (max_tokens) และเห็น preview ก่อนส่งว่าจะใช้ ~กี่ token
+- **🧠 ความจำอัจฉริยะ (rolling summary)** — สรุปบทสนทนาเก่าเป็น "ความจำ" ของ session แล้วแนบให้ AI ทุกเทิร์น ส่ง token น้อยแต่ AI ยังจำเรื่องสำคัญได้ (สรุปอัตโนมัติเมื่อคุยยาว หรือกดสรุปเองได้ เลือกโมเดลถูกๆ มาสรุปได้ใน ⚙️) — เป็นโหมดเริ่มต้น
 - **💾 ประวัติไม่หาย** — เก็บทุกอย่างใน localStorage refresh แล้วบทสนทนายังอยู่ครบ ไม่ต้องมี backend
 - **🌗 Dark mode** — สลับ light/dark ได้ จำค่าไว้ และไม่มี flash ตอนโหลดหน้า (FOUC-free)
 - **🔐 API key ปลอดภัย** — เรียก WaveSpeed ผ่าน API route ฝั่ง server เท่านั้น key ไม่หลุดไป browser
@@ -128,9 +131,13 @@ jarvis-nextjs/
 │   └── theme.css                    # Design tokens (light/dark) + Tailwind v4 @theme
 ├── src/
 │   ├── application/                 # ⚖️ Contracts — ไม่มี dependency ใดๆ
-│   │   ├── ai/models.ts             #    รายการ LLM models + ค่า default
+│   │   ├── ai/models.ts             #    รายการ LLM models + ราคา + ค่า default
+│   │   ├── ai/tokens.ts             #    token estimator (fallback/preview)
+│   │   ├── chat/settings.ts         #    การตั้งค่าบริหาร token
 │   │   └── repositories/
-│   │       └── IChatSessionRepository.ts
+│   │       ├── IChatSessionRepository.ts
+│   │       ├── IChatSettingsRepository.ts
+│   │       └── IUsageLedgerRepository.ts  # บัญชีรายจ่าย token สะสม
 │   ├── infrastructure/              # 🔌 Adapters — คุยกับโลกภายนอก
 │   │   ├── ai/WaveSpeedClient.ts    #    WaveSpeed API client (server-only)
 │   │   └── repositories/
@@ -139,6 +146,9 @@ jarvis-nextjs/
 │   └── presentation/                # 🎨 UI Layer
 │       ├── components/
 │       │   ├── chat/ChatView.tsx    #    JSX ล้วน — ไม่มี logic
+│       │   ├── chat/ChatSettingsPanel.tsx  # ตั้งค่าบริหาร token + โหมดความจำ
+│       │   ├── chat/UsageStatsPanel.tsx     # 📊 dashboard การใช้งาน
+│       │   ├── chat/MemoryPanel.tsx         # 🧠 ดู/สรุป/ล้างความจำของ session
 │       │   └── shared/ThemeToggle.tsx
 │       └── presenters/chat/
 │           ├── ChatPresenter.ts     #    business logic + SSE parser
@@ -159,10 +169,19 @@ jarvis-nextjs/
 | โมเดล | จุดเด่น |
 |---|---|
 | **MiniMax M2.7** (default) | เร็ว ราคาถูก context 205K |
+| MiniMax M3 | รุ่นใหม่กว่า M2.7 — context 1M ราคาประหยัด |
+| Claude Fable 5 | เรือธงตระกูล Claude 5 — reasoning ขั้นสูง context 1M |
+| Claude Opus 4.8 | โค้ดและงาน agent ซับซ้อน context 1M |
+| Claude Opus 4.7 | งาน agent หลายขั้นตอนต่อเนื่อง context 1M |
 | Claude Opus 4.6 | คุณภาพคำตอบสูง เหมาะกับงานซับซ้อน |
+| Claude Sonnet 4.6 | สมดุลคุณภาพ/ราคา context 1M |
+| GPT-5.5 | agentic coding/deep research context 1M |
+| GPT-5.4 Pro | reasoning แม่นยำสูง (ราคาสูง) |
 | GPT-5.2 Pro | โมเดลเรือธงจาก OpenAI |
+| Gemini 3.5 Flash | โค้ดขั้นสูง/งาน agent ขนาน context 1M |
 | Gemini 3 Flash | ตอบเร็ว เหมาะกับบทสนทนาทั่วไป |
 | DeepSeek V4 | ราคาประหยัด ความสามารถสูง |
+| DeepSeek V4 Pro | เก่งโค้ด/คณิต/งาน agent context 1M |
 
 เพิ่มโมเดลอื่นจาก [WaveSpeed (290+ models)](https://wavespeed.ai/llm) ได้ที่ [`src/application/ai/models.ts`](src/application/ai/models.ts)
 

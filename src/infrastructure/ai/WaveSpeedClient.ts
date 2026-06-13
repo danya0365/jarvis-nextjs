@@ -18,6 +18,10 @@ export interface WaveSpeedChatCompletionBody {
   model: string;
   messages: WaveSpeedChatMessage[];
   stream: boolean;
+  /** จำกัดความยาวคำตอบ — ช่วยคุมค่าใช้จ่าย output tokens */
+  max_tokens?: number;
+  /** include_usage: true → chunk สุดท้ายก่อน [DONE] จะมี usage (prompt/completion tokens) */
+  stream_options?: { include_usage: boolean };
 }
 
 export class WaveSpeedClient {

@@ -7,11 +7,15 @@
 
 import { ChatPresenter } from "./ChatPresenter";
 import { MockChatSessionRepository } from "@/src/infrastructure/repositories/mock/MockChatSessionRepository";
+import { MockChatSettingsRepository } from "@/src/infrastructure/repositories/mock/MockChatSettingsRepository";
+import { MockUsageLedgerRepository } from "@/src/infrastructure/repositories/mock/MockUsageLedgerRepository";
 
 export class ChatPresenterServerFactory {
   static create(): ChatPresenter {
     const repository = new MockChatSessionRepository(false);
-    return new ChatPresenter(repository);
+    const settingsRepository = new MockChatSettingsRepository();
+    const usageLedger = new MockUsageLedgerRepository();
+    return new ChatPresenter(repository, settingsRepository, usageLedger);
   }
 }
 

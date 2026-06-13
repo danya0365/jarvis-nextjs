@@ -1,9 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChatViewModel, ChatPresenter } from "./ChatPresenter";
+import {
+  ChatViewModel,
+  ChatPresenter,
+  SessionUsageTotals,
+  ContextPreview,
+} from "./ChatPresenter";
 import { createClientChatPresenter } from "./ChatPresenterClientFactory";
-import type { ChatSession } from "@/src/application/repositories/IChatSessionRepository";
+import type {
+  ChatSession,
+  ChatMessage,
+} from "@/src/application/repositories/IChatSessionRepository";
+import {
+  ChatSettings,
+  DEFAULT_CHAT_SETTINGS,
+} from "@/src/application/chat/settings";
 
 const MESSAGES_END_ID = "chat-messages-end";
 
@@ -20,6 +32,15 @@ export interface ChatPresenterState {
   renameInput: string;
   /** id ของ sentinel div ท้าย message list — hook ใช้ scroll อัตโนมัติ */
   messagesEndId: string;
+  /** ยอด token/ค่าใช้จ่ายรวมของ session ปัจจุบัน */
+  sessionUsage: SessionUsageTotals;
+  /** preview ว่าถ้าส่งตอนนี้จะส่งกี่ข้อความ/กี่ token */
+  contextPreview: ContextPreview;
+  isStatsPanelOpen: boolean;
+  isSettingsPanelOpen: boolean;
+  isMemoryPanelOpen: boolean;
+  /** true = กำลังสรุปความจำก่อนส่งคำตอบ (โหมด summary) */
+  isSummarizing: boolean;
 }
 
 export interface ChatPresenterActions {
@@ -38,6 +59,21 @@ export interface ChatPresenterActions {
   toggleSidebar: () => void;
   setError: (error: string | null) => void;
   formatTime: (iso: string) => string;
+  updateSettings: (partial: Partial<ChatSettings>) => Promise<void>;
+  toggleStatsPanel: () => void;
+  toggleSettingsPanel: () => void;
+  toggleMemoryPanel: () => void;
+  /** สรุปความจำของ session ปัจจุบันทันที (manual fold) */
+  summarizeNow: () => Promise<void>;
+  /** ล้างความจำของ session ปัจจุบัน */
+  clearMemory: () => Promise<void>;
+  clearUsageStats: () => Promise<void>;
+  /** "1.2K" / "350" — ตัวเลข token อ่านง่าย */
+  formatTokens: (tokens: number) => string;
+  /** "$0.0021" / "<$0.0001" — string ว่างถ้าไม่รู้ราคา */
+  formatCostUsd: (costUsd: number | null) => string;
+  /** ข้อความ badge ใต้ assistant message — null ถ้า message ไม่มี usage */
+  formatMessageUsage: (message: ChatMessage) => string | null;
 }
 
 /**
@@ -79,6 +115,10 @@ export function useChatPresenter(
     null
   );
   const [renameInput, setRenameInputState] = useState("");
+  const [isStatsPanelOpen, setIsStatsPanelOpen] = useState(false);
+  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
+  const [isMemoryPanelOpen, setIsMemoryPanelOpen] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   const activeSession = useMemo(() => {
     if (!viewModel || !activeSessionId) return null;
@@ -87,6 +127,20 @@ export function useChatPresenter(
       null
     );
   }, [viewModel, activeSessionId]);
+
+  const settings = viewModel?.settings ?? DEFAULT_CHAT_SETTINGS;
+
+  // ยอด token/cost รวมของ session ปัจจุบัน (จาก usage บน assistant messages)
+  const sessionUsage = useMemo(
+    () => presenter.getSessionUsageTotals(activeSession),
+    [presenter, activeSession]
+  );
+
+  // preview สิ่งที่จะส่งให้ AI ถ้ากดส่งตอนนี้ (เปลี่ยนตาม input + settings)
+  const contextPreview = useMemo(
+    () => presenter.getContextPreview(activeSession, input, settings),
+    [presenter, activeSession, input, settings]
+  );
 
   /**
    * Load sessions from localStorage repository
@@ -266,6 +320,11 @@ export function useChatPresenter(
             setStreamingText(fullTextSoFar);
           }
         },
+        onStatus: (status) => {
+          if (isMountedRef.current) {
+            setIsSummarizing(status === "summarizing");
+          }
+        },
         signal: abortControllerRef.current.signal,
       });
 
@@ -292,6 +351,7 @@ export function useChatPresenter(
       if (isMountedRef.current) {
         setIsStreaming(false);
         setStreamingText("");
+        setIsSummarizing(false);
       }
     }
   }, [activeSessionId, input, isStreaming, loadData, presenter]);
@@ -306,6 +366,98 @@ export function useChatPresenter(
     setIsSidebarOpen((open) => !open);
   }, []);
 
+  const updateSettings = useCallback(
+    async (partial: Partial<ChatSettings>) => {
+      try {
+        await presenter.saveSettings({ ...settings, ...partial });
+        await loadData();
+      } catch (err) {
+        if (isMountedRef.current) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          setError(errorMessage);
+          console.error("Error updating chat settings:", err);
+        }
+      }
+    },
+    [loadData, presenter, settings]
+  );
+
+  const toggleStatsPanel = useCallback(() => {
+    setIsStatsPanelOpen((open) => !open);
+    setIsSettingsPanelOpen(false);
+  }, []);
+
+  const toggleSettingsPanel = useCallback(() => {
+    setIsSettingsPanelOpen((open) => !open);
+    setIsStatsPanelOpen(false);
+    setIsMemoryPanelOpen(false);
+  }, []);
+
+  const toggleMemoryPanel = useCallback(() => {
+    setIsMemoryPanelOpen((open) => !open);
+    setIsStatsPanelOpen(false);
+    setIsSettingsPanelOpen(false);
+  }, []);
+
+  const summarizeNow = useCallback(async () => {
+    if (!activeSessionId) return;
+
+    setError(null);
+    setIsSummarizing(true);
+    try {
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      abortControllerRef.current = new AbortController();
+      await presenter.summarizeNow(
+        activeSessionId,
+        abortControllerRef.current.signal
+      );
+      await loadData();
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      if (isMountedRef.current) {
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        setError(errorMessage);
+        console.error("Error summarizing memory:", err);
+      }
+    } finally {
+      if (isMountedRef.current) setIsSummarizing(false);
+    }
+  }, [activeSessionId, loadData, presenter]);
+
+  const clearMemory = useCallback(async () => {
+    if (!activeSessionId) return;
+    // confirm อยู่ใน hook เพื่อให้ View เป็น JSX ล้วน
+    if (!window.confirm("ต้องการล้างความจำของแชทนี้ใช่ไหม?")) return;
+
+    setError(null);
+    try {
+      await presenter.clearMemory(activeSessionId);
+      await loadData();
+    } catch (err) {
+      if (isMountedRef.current) {
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        setError(errorMessage);
+        console.error("Error clearing memory:", err);
+      }
+    }
+  }, [activeSessionId, loadData, presenter]);
+
+  const clearUsageStats = useCallback(async () => {
+    // confirm อยู่ใน hook เพื่อให้ View เป็น JSX ล้วน
+    if (!window.confirm("ต้องการล้างสถิติการใช้งานทั้งหมดใช่ไหม?")) return;
+
+    try {
+      await presenter.clearUsageLedger();
+      await loadData();
+    } catch (err) {
+      if (isMountedRef.current) {
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        setError(errorMessage);
+        console.error("Error clearing usage stats:", err);
+      }
+    }
+  }, [loadData, presenter]);
+
   const formatTime = useCallback((iso: string) => {
     try {
       return new Date(iso).toLocaleTimeString("th-TH", {
@@ -316,6 +468,41 @@ export function useChatPresenter(
       return "";
     }
   }, []);
+
+  const formatTokens = useCallback((tokens: number) => {
+    if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+    if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
+    return `${tokens}`;
+  }, []);
+
+  const formatCostUsd = useCallback((costUsd: number | null) => {
+    if (costUsd === null) return "";
+    if (costUsd === 0) return "$0.00";
+    if (costUsd < 0.0001) return "<$0.0001";
+    return `$${costUsd.toFixed(4)}`;
+  }, []);
+
+  const formatMessageUsage = useCallback(
+    (message: ChatMessage): string | null => {
+      if (!message.usage || !activeSession) return null;
+
+      const { promptTokens, completionTokens, estimated } = message.usage;
+      const cost = presenter.getMessageCostUsd(
+        activeSession.model,
+        message.usage
+      );
+
+      const prefix = estimated ? "~" : "";
+      const parts = [
+        `${prefix}↓${formatTokens(promptTokens)} ↑${formatTokens(
+          completionTokens
+        )} tokens`,
+      ];
+      if (cost !== null) parts.push(formatCostUsd(cost));
+      return parts.join(" · ");
+    },
+    [activeSession, formatCostUsd, formatTokens, presenter]
+  );
 
   // Hydrate จาก localStorage ตอน mount เสมอ
   // (deviation จาก template guard `if (!initialViewModel)` — server ให้ค่าว่างเสมอ)
@@ -356,6 +543,12 @@ export function useChatPresenter(
       renamingSessionId,
       renameInput,
       messagesEndId: MESSAGES_END_ID,
+      sessionUsage,
+      contextPreview,
+      isStatsPanelOpen,
+      isSettingsPanelOpen,
+      isMemoryPanelOpen,
+      isSummarizing,
     },
     {
       loadData,
@@ -373,6 +566,16 @@ export function useChatPresenter(
       toggleSidebar,
       setError,
       formatTime,
+      updateSettings,
+      toggleStatsPanel,
+      toggleSettingsPanel,
+      toggleMemoryPanel,
+      summarizeNow,
+      clearMemory,
+      clearUsageStats,
+      formatTokens,
+      formatCostUsd,
+      formatMessageUsage,
     },
   ];
 }
