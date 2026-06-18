@@ -18,13 +18,14 @@ import {
   executeTool,
 } from "@/src/infrastructure/ai/workspaceTools";
 import { TursoWorkspaceRepository } from "@/src/infrastructure/repositories/turso/TursoWorkspaceRepository";
+import { TursoUserProfileRepository } from "@/src/infrastructure/repositories/turso/TursoUserProfileRepository";
 import { DEFAULT_MODEL } from "@/src/application/ai/models";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const VALID_ROLES = new Set(["user", "assistant", "system"]);
-const MAX_AGENT_STEPS = 6;
+const MAX_AGENT_STEPS = 5;
 
 export async function POST(req: Request) {
   const client = createWaveSpeedClient();
@@ -72,6 +73,7 @@ export async function POST(req: Request) {
       : undefined;
 
   const repo = new TursoWorkspaceRepository();
+  const profileRepo = new TursoUserProfileRepository();
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -84,9 +86,33 @@ export async function POST(req: Request) {
       };
 
       try {
-        const workspaces = await repo.listWorkspaces().catch(() => []);
+        // ชั้น context: [system คงที่] + [user profile] + [memory/recent/current จาก client]
+        // เรียงคงที่→เปลี่ยนบ่อย เพื่อให้ provider cache prefix (system+profile+tools) ได้
+        const [profile, workspaces] = await Promise.all([
+          profileRepo.get().catch(() => null),
+          repo.listWorkspaces().catch(() => []),
+        ]);
+        const profileText = profile?.profile.trim();
+        const today = new Date().toISOString().slice(0, 10);
+        // ใส่รายชื่อ workspace ใน system prompt → AI ไม่ต้องเสีย step เรียก list_workspaces
+        // (WaveSpeed ไม่ทำ auto prompt-caching จึงเน้น "ลด step" มากกว่า "ทำ prefix ให้ cache ได้")
+        const wsLine =
+          workspaces.length > 0
+            ? `workspace ที่มี: ${workspaces.map((w) => w.name).join(", ")}`
+            : "ยังไม่มี workspace (ใช้ create_workspace เพื่อสร้าง)";
         const convo: WaveSpeedChatMessage[] = [
-          { role: "system", content: systemPrompt(workspaces) },
+          {
+            role: "system",
+            content: `${SYSTEM_PROMPT}\n\nวันนี้คือ ${today}\n${wsLine}`,
+          },
+          ...(profileText
+            ? [
+                {
+                  role: "system" as const,
+                  content: `ข้อมูลผู้ใช้ (จำไว้ใช้ตอบ):\n${profileText}`,
+                },
+              ]
+            : []),
           ...(messages as { role: WaveSpeedChatMessage["role"]; content: string }[]).map(
             (m) => ({ role: m.role, content: m.content })
           ),
@@ -94,6 +120,7 @@ export async function POST(req: Request) {
 
         let totalPrompt = 0;
         let totalCompletion = 0;
+        let totalCached = 0;
 
         for (let step = 0; step < MAX_AGENT_STEPS; step++) {
           const isLast = step === MAX_AGENT_STEPS - 1;
@@ -102,8 +129,10 @@ export async function POST(req: Request) {
               model: modelId,
               messages: convo,
               stream: false,
-              tools: WORKSPACE_TOOLS,
-              tool_choice: isLast ? "none" : "auto",
+              // omit tools ทั้งก้อนตอน step สุดท้าย — บังคับให้ตอบ + ประหยัด ~1,200 tokens/turn
+              ...(isLast
+                ? {}
+                : { tools: WORKSPACE_TOOLS, tool_choice: "auto" as const }),
               ...(maxTokensValue !== undefined && { max_tokens: maxTokensValue }),
             },
             req.signal
@@ -112,6 +141,7 @@ export async function POST(req: Request) {
           if (completion.usage) {
             totalPrompt += completion.usage.promptTokens;
             totalCompletion += completion.usage.completionTokens;
+            totalCached += completion.usage.cachedTokens;
           }
 
           const toolCalls = completion.message.tool_calls;
@@ -139,7 +169,10 @@ export async function POST(req: Request) {
                       : undefined,
                 },
               });
-              const result = await executeTool(tc.function.name, args, repo);
+              const result = await executeTool(tc.function.name, args, {
+                workspace: repo,
+                profile: profileRepo,
+              });
               convo.push({
                 role: "tool",
                 tool_call_id: tc.id,
@@ -161,6 +194,7 @@ export async function POST(req: Request) {
           usage: {
             prompt_tokens: totalPrompt,
             completion_tokens: totalCompletion,
+            cached_tokens: totalCached,
           },
         });
         done();
@@ -186,29 +220,18 @@ export async function POST(req: Request) {
   });
 }
 
-function systemPrompt(workspaces: { name: string; description?: string }[]): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const list =
-    workspaces.length > 0
-      ? workspaces
-          .map((w) => `- ${w.name}${w.description ? ` (${w.description})` : ""}`)
-          .join("\n")
-      : "(ยังไม่มี workspace — สร้างใหม่ด้วย create_workspace ได้)";
-
-  return [
-    "คุณคือ jarvis ผู้ช่วยส่วนตัวของผู้ใช้ ตอบเป็นภาษาไทย",
-    `วันนี้คือ ${today}`,
-    "",
-    "คุณมี workspace = คลังข้อมูลที่ใช้ร่วมกันข้ามทุกบทสนทนา เก็บข้อมูลบริษัท/รายรับ/รายจ่าย/โน้ต ฯลฯ",
-    "ผู้ใช้ให้สิทธิคุณเต็มที่ในการ อ่าน เพิ่ม แก้ไข ลบ ข้อมูล workspace ผ่าน tool ได้เองโดยไม่ต้องขออนุญาตหรือถามยืนยัน",
-    "เมื่อผู้ใช้ถามถึงข้อมูลใน workspace ให้เรียก tool ดึงข้อมูลจริงก่อนเสมอ อย่าเดาหรือกุข้อมูล",
-    "ถ้าผู้ใช้สั่งให้บันทึก/แก้/ลบข้อมูล ให้ลงมือผ่าน tool ทันที แล้วยืนยันผลให้ผู้ใช้ทราบ",
-    "ถ้าอ้าง workspace ที่ยังไม่มี ให้เรียก list_workspaces ตรวจก่อน หรือถามผู้ใช้ว่าจะสร้างใหม่ไหม",
-    "",
-    "workspace ที่มีตอนนี้:",
-    list,
-  ].join("\n");
-}
+// system prompt แบบคงที่ (ไม่มี workspace list/วันที่แบบ dynamic ที่ทำลาย cache)
+// — AI เรียก list_workspaces เองเมื่อต้องการรู้ว่ามี workspace อะไร
+const SYSTEM_PROMPT = [
+  "คุณคือ jarvis ผู้ช่วยส่วนตัวของผู้ใช้ ตอบเป็นภาษาไทย",
+  "",
+  "workspace = คลังข้อมูลที่ใช้ร่วมกันข้ามทุกบทสนทนา (ข้อมูลบริษัท/รายรับ/รายจ่าย/โน้ต)",
+  "ผู้ใช้ให้สิทธิเต็มที่ในการ อ่าน เพิ่ม แก้ไข ลบ ข้อมูลผ่าน tool ได้เองโดยไม่ต้องถามยืนยัน",
+  "เมื่อถามถึงข้อมูล ให้เรียก tool ดึงข้อมูลจริงก่อนเสมอ อย่าเดา; ถ้าไม่รู้ว่ามี workspace ใด ให้เรียก list_workspaces",
+  "เมื่อสั่งบันทึก/แก้/ลบ ให้ลงมือผ่าน tool ทันที แล้วยืนยันผล",
+  "ถ้าวันที่สำคัญต่อการบันทึก (เช่นรายการเงิน) ให้ถามวันที่หรือใช้วันที่ที่ผู้ใช้ระบุ",
+  "เมื่อรู้ข้อมูลถาวรเกี่ยวกับตัวผู้ใช้ (ชื่อ บทบาท ความชอบ) ให้เรียก update_user_profile บันทึกไว้",
+].join("\n");
 
 /**
  * ตัดข้อความยาวเป็นชิ้นเล็ก ~24 ตัว เพื่อให้ทยอยขึ้นแบบพิมพ์

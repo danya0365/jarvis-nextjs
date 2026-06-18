@@ -1,9 +1,12 @@
 /**
  * workspaceTools
- * นิยาม tool (OpenAI function-calling) + ตัว execute ที่แตะ Turso workspace repo
+ * นิยาม tool (OpenAI function-calling) + ตัว execute ที่แตะ Turso
  * ใช้โดย agent loop (app/api/agent/route.ts)
  * ⚠️ server-side เท่านั้น — tool คือ interface เดียวที่ AI เข้าถึง DB ได้
  *    ผู้ใช้ให้สิทธิเต็ม: อ่าน/เพิ่ม/แก้/ลบ ได้เองโดยไม่ต้องถามยืนยัน
+ *
+ * 🪶 descriptions ถูกย่อให้สั้นเพื่อประหยัด input token (schema นี้ส่งทุก step ของ loop)
+ *    คง ชื่อ tool + ชื่อ param + enum + required ไว้ (สิ่งที่โมเดลใช้เลือก tool/เติม args)
  */
 
 import "server-only";
@@ -11,6 +14,13 @@ import type {
   IWorkspaceRepository,
   TransactionDirection,
 } from "@/src/application/repositories/IWorkspaceRepository";
+import type { IUserProfileRepository } from "@/src/application/repositories/IUserProfileRepository";
+
+/** repos ที่ tool ต้องใช้ */
+export interface ToolDeps {
+  workspace: IWorkspaceRepository;
+  profile: IUserProfileRepository;
+}
 
 /** tool schema รูปแบบ OpenAI — ส่งให้ WaveSpeed ใน field `tools` */
 export interface OpenAiTool {
@@ -38,112 +48,78 @@ function fn(
   };
 }
 
-const workspaceArg = {
-  workspace: {
-    type: "string",
-    description: "ชื่อ หรือ id ของ workspace ที่ต้องการทำงานด้วย",
-  },
-};
+const S = { type: "string" };
+const N = { type: "number" };
+const ws = { workspace: { type: "string", description: "ชื่อหรือ id ของ workspace" } };
+const dir = { type: "string", enum: ["income", "expense"] };
 
 export const WORKSPACE_TOOLS: OpenAiTool[] = [
-  fn("list_workspaces", "ดูรายการ workspace ทั้งหมดที่มีอยู่ (ชื่อ + คำอธิบาย)", {}),
+  fn("list_workspaces", "ดู workspace ทั้งหมด", {}),
   fn(
     "create_workspace",
-    "สร้าง workspace ใหม่ เมื่อผู้ใช้ต้องการคลังข้อมูลใหม่",
-    {
-      name: { type: "string", description: "ชื่อ workspace (ต้องไม่ซ้ำ)" },
-      description: { type: "string", description: "คำอธิบายสั้นๆ (ไม่บังคับ)" },
-    },
+    "สร้าง workspace ใหม่",
+    { name: { type: "string", description: "ชื่อ (ห้ามซ้ำ)" }, description: S },
     ["name"]
   ),
   fn(
     "list_records",
-    "ดู/ค้นข้อมูลทั่วไป (records) ใน workspace เช่น ข้อมูลบริษัท ผู้ติดต่อ โน้ต",
-    {
-      ...workspaceArg,
-      kind: {
-        type: "string",
-        description: "กรองตามประเภท เช่น 'company-info', 'contact' (ไม่บังคับ)",
-      },
-      query: { type: "string", description: "คำค้นในเนื้อหา (ไม่บังคับ)" },
-      limit: { type: "number", description: "จำกัดจำนวน (ไม่บังคับ)" },
-    },
+    "ดู/ค้น records ใน workspace",
+    { ...ws, kind: S, query: S, limit: N },
     ["workspace"]
   ),
   fn(
     "add_record",
-    "เพิ่มข้อมูลทั่วไปลง workspace — data เป็น object อะไรก็ได้ตามเนื้อหา",
+    "เพิ่ม record ลง workspace",
     {
-      ...workspaceArg,
-      kind: {
-        type: "string",
-        description: "ประเภทข้อมูลที่ตั้งเอง เช่น 'company-info', 'contact', 'note'",
-      },
-      data: {
-        type: "object",
-        description: "เนื้อหาแบบ key-value เช่น {\"ชื่อบริษัท\":\"...\",\"ปีก่อตั้ง\":2024}",
-      },
+      ...ws,
+      kind: { type: "string", description: "ประเภท เช่น company-info, contact, note" },
+      data: { type: "object", description: "เนื้อหา key-value" },
     },
     ["workspace", "kind", "data"]
   ),
   fn(
     "update_record",
-    "แก้ไขข้อมูล record ที่มีอยู่ (ใช้ record_id จาก list_records)",
-    {
-      record_id: { type: "string", description: "id ของ record" },
-      kind: { type: "string", description: "เปลี่ยนประเภท (ไม่บังคับ)" },
-      data: { type: "object", description: "เนื้อหาใหม่ (แทนที่ของเดิม, ไม่บังคับ)" },
-    },
+    "แก้ record (ใช้ record_id จาก list_records)",
+    { record_id: S, kind: S, data: { type: "object" } },
     ["record_id"]
   ),
-  fn(
-    "delete_record",
-    "ลบ record (ใช้ record_id จาก list_records)",
-    { record_id: { type: "string", description: "id ของ record" } },
-    ["record_id"]
-  ),
+  fn("delete_record", "ลบ record", { record_id: S }, ["record_id"]),
   fn(
     "add_transaction",
-    "บันทึกรายการเงิน (รายรับ/รายจ่าย) ลง workspace",
+    "บันทึกรายรับ/รายจ่าย",
     {
-      ...workspaceArg,
-      date: { type: "string", description: "วันที่รูปแบบ YYYY-MM-DD" },
-      direction: {
-        type: "string",
-        enum: ["income", "expense"],
-        description: "income = รายรับ, expense = รายจ่าย",
-      },
-      amount: { type: "number", description: "จำนวนเงิน (บวกเสมอ)" },
-      category: { type: "string", description: "หมวดหมู่ เช่น 'ค่าจ้าง', 'ค่าโฆษณา' (ไม่บังคับ)" },
-      note: { type: "string", description: "บันทึกเพิ่มเติม (ไม่บังคับ)" },
+      ...ws,
+      date: { type: "string", description: "YYYY-MM-DD" },
+      direction: { ...dir, description: "income=รายรับ expense=รายจ่าย" },
+      amount: { type: "number", description: "บวกเสมอ" },
+      category: S,
+      note: S,
     },
     ["workspace", "date", "direction", "amount"]
   ),
   fn(
     "list_transactions",
-    "ดูรายการเงินใน workspace (กรองช่วงวันที่/ประเภท/หมวดได้)",
+    "ดูรายการเงิน (กรองได้)",
     {
-      ...workspaceArg,
-      from: { type: "string", description: "ตั้งแต่วันที่ YYYY-MM-DD (ไม่บังคับ)" },
-      to: { type: "string", description: "ถึงวันที่ YYYY-MM-DD (ไม่บังคับ)" },
-      direction: {
-        type: "string",
-        enum: ["income", "expense"],
-        description: "กรองเฉพาะรายรับหรือรายจ่าย (ไม่บังคับ)",
-      },
-      category: { type: "string", description: "กรองตามหมวด (ไม่บังคับ)" },
+      ...ws,
+      from: { type: "string", description: "YYYY-MM-DD" },
+      to: { type: "string", description: "YYYY-MM-DD" },
+      direction: dir,
+      category: S,
     },
     ["workspace"]
   ),
   fn(
     "summarize_finance",
-    "สรุปการเงินของ workspace: รวมรายรับ รายจ่าย กำไรสุทธิ และแยกตามหมวด",
-    {
-      ...workspaceArg,
-      from: { type: "string", description: "ตั้งแต่วันที่ YYYY-MM-DD (ไม่บังคับ)" },
-      to: { type: "string", description: "ถึงวันที่ YYYY-MM-DD (ไม่บังคับ)" },
-    },
+    "สรุปการเงิน: รายรับ รายจ่าย กำไรสุทธิ แยกหมวด",
+    { ...ws, from: { type: "string", description: "YYYY-MM-DD" }, to: { type: "string", description: "YYYY-MM-DD" } },
     ["workspace"]
+  ),
+  fn(
+    "update_user_profile",
+    "เขียนโปรไฟล์ผู้ใช้ใหม่ทั้งก้อน (รวมข้อมูลเดิม+ใหม่) เมื่อรู้ข้อมูลถาวรของผู้ใช้ เช่น ชื่อ บทบาท ความชอบ",
+    { profile: { type: "string", description: "โปรไฟล์ฉบับเต็มที่ปรับปรุงแล้ว กระชับ" } },
+    ["profile"]
   ),
 ];
 
@@ -161,8 +137,9 @@ const num = (v: unknown): number | undefined =>
 export async function executeTool(
   name: string,
   args: Args,
-  repo: IWorkspaceRepository
+  deps: ToolDeps
 ): Promise<unknown> {
+  const repo = deps.workspace;
   try {
     switch (name) {
       case "list_workspaces":
@@ -178,9 +155,9 @@ export async function executeTool(
       }
 
       case "list_records": {
-        const ws = await resolve(repo, args.workspace);
-        if ("error" in ws) return ws;
-        return await repo.listRecords(ws.id, {
+        const w = await resolve(repo, args.workspace);
+        if ("error" in w) return w;
+        return await repo.listRecords(w.id, {
           kind: str(args.kind),
           query: str(args.query),
           limit: num(args.limit),
@@ -188,15 +165,15 @@ export async function executeTool(
       }
 
       case "add_record": {
-        const ws = await resolve(repo, args.workspace);
-        if ("error" in ws) return ws;
+        const w = await resolve(repo, args.workspace);
+        if ("error" in w) return w;
         const kind = str(args.kind);
         if (!kind) return { error: "ต้องระบุ kind" };
         const data =
           args.data && typeof args.data === "object"
             ? (args.data as Record<string, unknown>)
             : {};
-        return await repo.addRecord(ws.id, { kind, data });
+        return await repo.addRecord(w.id, { kind, data });
       }
 
       case "update_record": {
@@ -219,15 +196,15 @@ export async function executeTool(
       }
 
       case "add_transaction": {
-        const ws = await resolve(repo, args.workspace);
-        if ("error" in ws) return ws;
+        const w = await resolve(repo, args.workspace);
+        if ("error" in w) return w;
         const date = str(args.date);
         const amount = num(args.amount);
         const direction = args.direction;
         if (!date || (direction !== "income" && direction !== "expense") || amount === undefined) {
           return { error: "ต้องระบุ date (YYYY-MM-DD), direction (income/expense), amount" };
         }
-        return await repo.addTransaction(ws.id, {
+        return await repo.addTransaction(w.id, {
           date,
           direction: direction as TransactionDirection,
           amount,
@@ -237,22 +214,27 @@ export async function executeTool(
       }
 
       case "list_transactions": {
-        const ws = await resolve(repo, args.workspace);
-        if ("error" in ws) return ws;
-        const dir = args.direction;
-        return await repo.listTransactions(ws.id, {
+        const w = await resolve(repo, args.workspace);
+        if ("error" in w) return w;
+        const d = args.direction;
+        return await repo.listTransactions(w.id, {
           from: str(args.from),
           to: str(args.to),
-          direction:
-            dir === "income" || dir === "expense" ? dir : undefined,
+          direction: d === "income" || d === "expense" ? d : undefined,
           category: str(args.category),
         });
       }
 
       case "summarize_finance": {
-        const ws = await resolve(repo, args.workspace);
-        if ("error" in ws) return ws;
-        return await repo.summarizeFinance(ws.id, str(args.from), str(args.to));
+        const w = await resolve(repo, args.workspace);
+        if ("error" in w) return w;
+        return await repo.summarizeFinance(w.id, str(args.from), str(args.to));
+      }
+
+      case "update_user_profile": {
+        const profile = typeof args.profile === "string" ? args.profile : "";
+        const saved = await deps.profile.save(profile);
+        return { ok: true, updatedAt: saved.updatedAt };
       }
 
       default:
@@ -272,11 +254,11 @@ async function resolve(
 ): Promise<{ id: string } | { error: string }> {
   const key = str(workspace);
   if (!key) return { error: "ต้องระบุ workspace (ชื่อหรือ id)" };
-  const ws = await repo.getWorkspaceByIdOrName(key);
-  if (!ws) {
+  const found = await repo.getWorkspaceByIdOrName(key);
+  if (!found) {
     return {
-      error: `ไม่พบ workspace "${key}" — เรียก list_workspaces เพื่อดูรายการ หรือ create_workspace เพื่อสร้างใหม่`,
+      error: `ไม่พบ workspace "${key}" — เรียก list_workspaces หรือ create_workspace`,
     };
   }
-  return { id: ws.id };
+  return { id: found.id };
 }

@@ -7,6 +7,7 @@ import { UsageStatsPanel } from "@/src/presentation/components/chat/UsageStatsPa
 import { ChatSettingsPanel } from "@/src/presentation/components/chat/ChatSettingsPanel";
 import { MemoryPanel } from "@/src/presentation/components/chat/MemoryPanel";
 import { WorkspacePanel } from "@/src/presentation/components/chat/WorkspacePanel";
+import { UserProfilePanel } from "@/src/presentation/components/chat/UserProfilePanel";
 
 interface ChatViewProps {
   initialViewModel?: ChatViewModel;
@@ -196,6 +197,15 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
               </optgroup>
             ))}
           </select>
+
+          <button
+            onClick={actions.toggleProfilePanel}
+            title="โปรไฟล์ผู้ใช้ — AI จำตัวคุณข้ามทุกแชต"
+            aria-label="เปิดโปรไฟล์ผู้ใช้"
+            className="w-9 h-9 rounded-lg border border-border bg-card hover:bg-muted transition-colors flex items-center justify-center"
+          >
+            👤
+          </button>
 
           <button
             onClick={actions.toggleWorkspacePanel}
@@ -403,6 +413,15 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
           onClose={actions.toggleMemoryPanel}
           onSummarize={actions.summarizeNow}
           onClear={actions.clearMemory}
+        />
+      )}
+
+      {/* User profile panel */}
+      {state.isProfilePanelOpen && (
+        <UserProfilePanel
+          profile={state.userProfile}
+          onClose={actions.toggleProfilePanel}
+          onSave={actions.saveProfile}
         />
       )}
 

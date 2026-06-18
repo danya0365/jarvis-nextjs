@@ -23,6 +23,8 @@ import type {
   WorkspaceTransaction,
   FinanceSummary,
 } from "@/src/application/repositories/IWorkspaceRepository";
+import { HttpUserProfileRepository } from "@/src/infrastructure/repositories/http/HttpUserProfileRepository";
+import type { UserProfile } from "@/src/application/repositories/IUserProfileRepository";
 
 const MESSAGES_END_ID = "chat-messages-end";
 
@@ -79,6 +81,9 @@ export interface ChatPresenterState {
   /** รายละเอียด workspace ที่เปิดดูอยู่ (records + transactions + สรุปการเงิน) */
   workspaceDetail: WorkspaceDetail | null;
   isWorkspaceLoading: boolean;
+  /** โปรไฟล์ผู้ใช้ (ข้ามทุก session) — AI อัปเดตเอง + แก้ใน UI ได้ */
+  userProfile: UserProfile | null;
+  isProfilePanelOpen: boolean;
 }
 
 export interface ChatPresenterActions {
@@ -112,6 +117,9 @@ export interface ChatPresenterActions {
   /** เปิดดูรายละเอียด workspace (โหลด records + transactions + สรุป) */
   openWorkspaceDetail: (id: string) => Promise<void>;
   closeWorkspaceDetail: () => void;
+  toggleProfilePanel: () => void;
+  loadProfile: () => Promise<void>;
+  saveProfile: (profile: string) => Promise<void>;
   clearUsageStats: () => Promise<void>;
   /** "1.2K" / "350" — ตัวเลข token อ่านง่าย */
   formatTokens: (tokens: number) => string;
@@ -170,9 +178,12 @@ export function useChatPresenter(
   const [workspaceDetail, setWorkspaceDetail] =
     useState<WorkspaceDetail | null>(null);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isProfilePanelOpen, setIsProfilePanelOpen] = useState(false);
 
-  // client adapter สำหรับ UI workspace (agent loop ฝั่ง server ใช้ Turso repo ตรง)
+  // client adapter สำหรับ UI (agent loop ฝั่ง server ใช้ Turso repo ตรง)
   const workspaceRepo = useMemo(() => new HttpWorkspaceRepository(), []);
+  const profileRepo = useMemo(() => new HttpUserProfileRepository(), []);
 
   const activeSession = useMemo(() => {
     if (!viewModel || !activeSessionId) return null;
@@ -447,6 +458,7 @@ export function useChatPresenter(
     setIsSettingsPanelOpen(false);
     setIsMemoryPanelOpen(false);
     setIsWorkspacePanelOpen(false);
+    setIsProfilePanelOpen(false);
   }, []);
 
   const toggleSettingsPanel = useCallback(() => {
@@ -454,6 +466,7 @@ export function useChatPresenter(
     setIsStatsPanelOpen(false);
     setIsMemoryPanelOpen(false);
     setIsWorkspacePanelOpen(false);
+    setIsProfilePanelOpen(false);
   }, []);
 
   const toggleMemoryPanel = useCallback(() => {
@@ -461,6 +474,7 @@ export function useChatPresenter(
     setIsStatsPanelOpen(false);
     setIsSettingsPanelOpen(false);
     setIsWorkspacePanelOpen(false);
+    setIsProfilePanelOpen(false);
   }, []);
 
   const loadWorkspaces = useCallback(async () => {
@@ -483,6 +497,7 @@ export function useChatPresenter(
     setIsStatsPanelOpen(false);
     setIsSettingsPanelOpen(false);
     setIsMemoryPanelOpen(false);
+    setIsProfilePanelOpen(false);
   }, [loadWorkspaces]);
 
   const createWorkspace = useCallback(
@@ -548,6 +563,37 @@ export function useChatPresenter(
   const closeWorkspaceDetail = useCallback(() => {
     setWorkspaceDetail(null);
   }, []);
+
+  const loadProfile = useCallback(async () => {
+    const p = await profileRepo.get();
+    if (isMountedRef.current) setUserProfile(p);
+  }, [profileRepo]);
+
+  const toggleProfilePanel = useCallback(() => {
+    setIsProfilePanelOpen((open) => {
+      if (!open) void loadProfile();
+      return !open;
+    });
+    setIsStatsPanelOpen(false);
+    setIsSettingsPanelOpen(false);
+    setIsMemoryPanelOpen(false);
+    setIsWorkspacePanelOpen(false);
+  }, [loadProfile]);
+
+  const saveProfile = useCallback(
+    async (profile: string) => {
+      setError(null);
+      try {
+        const saved = await profileRepo.save(profile);
+        if (isMountedRef.current) setUserProfile(saved);
+      } catch (err) {
+        if (isMountedRef.current) {
+          setError(err instanceof Error ? err.message : "บันทึกโปรไฟล์ไม่สำเร็จ");
+        }
+      }
+    },
+    [profileRepo]
+  );
 
   const summarizeNow = useCallback(async () => {
     if (!activeSessionId) return;
@@ -704,6 +750,8 @@ export function useChatPresenter(
       workspaces,
       workspaceDetail,
       isWorkspaceLoading,
+      userProfile,
+      isProfilePanelOpen,
     },
     {
       loadData,
@@ -733,6 +781,9 @@ export function useChatPresenter(
       deleteWorkspace,
       openWorkspaceDetail,
       closeWorkspaceDetail,
+      toggleProfilePanel,
+      loadProfile,
+      saveProfile,
       clearUsageStats,
       formatTokens,
       formatCostUsd,

@@ -28,6 +28,8 @@ Streaming แบบ real-time · ประวัติแชตเก็บบ�
 - **✂️ บริหาร token ประหยัดเงิน** — เลือกส่งเฉพาะข้อความล่าสุดให้ AI แทนการส่ง history ทั้งหมด, จำกัดความยาวคำตอบ (max_tokens) และเห็น preview ก่อนส่งว่าจะใช้ ~กี่ token
 - **🧠 ความจำอัจฉริยะ (rolling summary)** — สรุปบทสนทนาเก่าเป็น "ความจำ" ของ session แล้วแนบให้ AI ทุกเทิร์น ส่ง token น้อยแต่ AI ยังจำเรื่องสำคัญได้ (สรุปอัตโนมัติเมื่อคุยยาว หรือกดสรุปเองได้ เลือกโมเดลถูกๆ มาสรุปได้ใน ⚙️) — เป็นโหมดเริ่มต้น
 - **🗂️ Workspace + AI จัดการข้อมูลเอง (tool-calling)** — คลังข้อมูลที่ใช้ร่วมกันข้ามทุกแชต (ข้อมูลบริษัท/รายรับ-รายจ่าย/โน้ต) AI **query และเพิ่ม/แก้/ลบข้อมูลเองได้** ผ่าน agentic loop ฝั่ง server เช่นบอก "บันทึกรายรับ 5000 วันนี้" หรือ "เดือนนี้กำไรเท่าไหร่" แล้ว AI ลงมือผ่าน tool ให้ทันที — เปิดดู/จัดการที่ปุ่ม 🗂️
+- **👤 โปรไฟล์ผู้ใช้ข้ามทุกแชต** — ข้อมูลถาวรเกี่ยวกับตัวคุณ (ชื่อ/บทบาท/ความชอบ) แนบให้ AI ทุกบทสนทนาเพื่อตอบตรงตัวคุณโดยไม่ต้องเล่าซ้ำ — AI อัปเดตให้อัตโนมัติเมื่อรู้จักคุณมากขึ้น (tool `update_user_profile`) หรือแก้เองที่ปุ่ม 👤
+- **🪶 Optimize input token** — context จัดเป็นชั้น (System → Profile → Summary → Recent → Current), tool schemas ย่อสั้น, และไม่ส่ง tools ตอนตอบสุดท้าย → ลด prompt tokens ~18-20%/เทิร์น (วัดด้วย `scripts/agent-eval.mjs`)
 - **💾 ประวัติไม่หาย ใช้ข้ามเครื่องได้** — เก็บแชต/ตั้งค่า/ยอด token บน Turso (libsql SQLite) ผ่าน API route ฝั่ง server refresh หรือเปลี่ยนเบราว์เซอร์/อุปกรณ์ก็เห็นข้อมูลเดียวกัน
 - **🌗 Dark mode** — สลับ light/dark ได้ จำค่าไว้ และไม่มี flash ตอนโหลดหน้า (FOUC-free)
 - **🔐 API key ปลอดภัย** — เรียก WaveSpeed ผ่าน API route ฝั่ง server เท่านั้น key ไม่หลุดไป browser
@@ -141,6 +143,8 @@ ChatPresenter.sendMessage() ──► POST /api/agent (Node runtime)
 - ไม่ persist tool messages — history สะอาด ข้อมูลจริงอยู่ใน workspace DB อยู่แล้ว; usage รวมทุก step บันทึก ledger เป็น `kind: "agent"`
 - ยกเลิกกลางทางได้ผ่าน `AbortController` — signal ถูกส่งต่อถึง WaveSpeed จึงไม่มี request ค้าง
 
+**Optimize input token (layered context):** context จัดเป็นชั้น System → User Profile → Conversation Summary → Recent → Current. ลด token ด้วย (1) tool schemas ย่อสั้น (2) **ไม่ส่ง tools ใน step ตอบสุดท้าย** (3) ใส่รายชื่อ workspace ใน system prompt เพื่อตัด step `list_workspaces` → ลด ~18-20%/เทิร์น. *หมายเหตุ: ทดสอบแล้ว WaveSpeed ไม่ทำ prompt-caching ให้เมื่อมี `tools` ในคำขอ จึงพึ่งการลดขนาด/จำนวน step แทน.* วัดผลด้วย `node scripts/agent-eval.mjs <model>` (ยิงทุก tool + เช็ค DB + วัด prompt/cached tokens).
+
 ## 📁 โครงสร้างโปรเจกต์
 
 ```
@@ -149,6 +153,7 @@ jarvis-nextjs/
 │   ├── api/chat/route.ts            # POST proxy → WaveSpeed (streaming SSE, ใช้ตอนสรุปความจำ)
 │   ├── api/agent/route.ts           # POST agentic loop — AI เรียก tool จัดการ workspace (SSE)
 │   ├── api/workspaces/**            # GET/POST/PATCH/DELETE workspace + records + transactions → Turso
+│   ├── api/user-profile/route.ts    # GET/PUT โปรไฟล์ผู้ใช้ (singleton) → Turso
 │   ├── api/sessions/route.ts        # GET/POST sessions → Turso
 │   ├── api/sessions/[id]/route.ts   # GET/PATCH/DELETE session → Turso
 │   ├── api/settings/route.ts        # GET/PUT settings → Turso
@@ -167,7 +172,8 @@ jarvis-nextjs/
 │   │       ├── IChatSessionRepository.ts
 │   │       ├── IChatSettingsRepository.ts
 │   │       ├── IUsageLedgerRepository.ts  # บัญชีรายจ่าย token สะสม
-│   │       └── IWorkspaceRepository.ts    # คลังข้อมูลที่ AI เข้าถึงผ่าน tools
+│   │       ├── IWorkspaceRepository.ts    # คลังข้อมูลที่ AI เข้าถึงผ่าน tools
+│   │       └── IUserProfileRepository.ts  # โปรไฟล์ผู้ใช้ (singleton, ชั้น context)
 │   ├── infrastructure/              # 🔌 Adapters — คุยกับโลกภายนอก
 │   │   ├── ai/WaveSpeedClient.ts    #    WaveSpeed API client (server-only, รองรับ tools)
 │   │   ├── ai/workspaceTools.ts     #    นิยาม tool + executeTool (server-only)
@@ -184,6 +190,7 @@ jarvis-nextjs/
 │       │   ├── chat/UsageStatsPanel.tsx     # 📊 dashboard การใช้งาน
 │       │   ├── chat/MemoryPanel.tsx         # 🧠 ดู/สรุป/ล้างความจำของ session
 │       │   ├── chat/WorkspacePanel.tsx      # 🗂️ ดู/สร้าง/ลบ workspace + ข้อมูลที่ AI เก็บ
+│       │   ├── chat/UserProfilePanel.tsx     # 👤 ดู/แก้โปรไฟล์ผู้ใช้
 │       │   └── shared/ThemeToggle.tsx
 │       └── presenters/chat/
 │           ├── ChatPresenter.ts     #    business logic + SSE parser

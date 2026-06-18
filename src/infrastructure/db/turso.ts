@@ -80,6 +80,13 @@ async function bootstrap(): Promise<void> {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_usage_date ON usage_ledger(date)`,
 
+      // user_profile: ข้อมูลถาวรเกี่ยวกับผู้ใช้ ข้ามทุก session (singleton) — ชั้น context สำหรับ AI
+      `CREATE TABLE IF NOT EXISTS user_profile (
+        id TEXT PRIMARY KEY,
+        profile TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+      )`,
+
       // --- Workspace: คลังข้อมูลที่ใช้ร่วมกันข้ามทุก session (AI แตะผ่าน tools) ---
       `CREATE TABLE IF NOT EXISTS workspaces (
         id TEXT PRIMARY KEY,

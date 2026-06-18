@@ -57,7 +57,12 @@ export interface WaveSpeedCompletion {
     tool_calls?: WaveSpeedToolCall[];
   };
   finishReason: string | null;
-  usage: { promptTokens: number; completionTokens: number } | null;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    /** prompt tokens ที่ hit cache (prompt caching) — วัดผล optimize */
+    cachedTokens: number;
+  } | null;
 }
 
 export class WaveSpeedClient {
@@ -125,6 +130,8 @@ export class WaveSpeedClient {
         ? {
             promptTokens: Number(rawUsage.prompt_tokens) || 0,
             completionTokens: Number(rawUsage.completion_tokens) || 0,
+            cachedTokens:
+              Number(rawUsage.prompt_tokens_details?.cached_tokens) || 0,
           }
         : null,
     };
