@@ -4,6 +4,8 @@
  * Following Clean Architecture - this is in the Application layer
  */
 
+import type { ProviderId } from "@/src/application/ai/providers";
+
 export type ChatRole = "user" | "assistant" | "system";
 
 export interface MessageTokenUsage {
@@ -26,7 +28,9 @@ export interface ChatSession {
   id: string;
   /** ชื่อ session — default "แชทใหม่" แล้ว auto-title จาก user message แรก */
   title: string;
-  /** WaveSpeed model ID เช่น "minimax/minimax-m2.7" — เก็บแยกต่อ session */
+  /** LLM provider ID — ปิดเป็นชุด ต้องอยู่ใน PROVIDERS registry */
+  provider: ProviderId;
+  /** LLM model ID เช่น "minimax/minimax-m2.7" — เก็บแยกต่อ session */
   model: string;
   messages: ChatMessage[];
   /** บันทึกความจำ rolling — สรุปข้อความเก่าที่พับแล้ว ส่งเป็น system message หัวบทสนทนา (optional, backward-compat) */
@@ -39,12 +43,14 @@ export interface ChatSession {
 
 export interface CreateChatSessionData {
   title?: string;
+  provider?: ProviderId;
   model?: string;
 }
 
 export interface UpdateChatSessionData {
   title?: string;
   model?: string;
+  provider?: ProviderId;
   /** แทนที่ messages ทั้ง array (ครอบทั้ง append และแก้ไข) */
   messages?: ChatMessage[];
   /** บันทึกความจำ rolling ของ session */

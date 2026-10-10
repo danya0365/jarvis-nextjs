@@ -35,6 +35,7 @@ export class TursoChatSettingsRepository implements IChatSettingsRepository {
           ? null
           : Number(row.max_response_tokens),
       summaryModel: String(row.summary_model),
+      provider: row.provider as ChatSettings["provider"],
     });
   }
 
@@ -44,19 +45,21 @@ export class TursoChatSettingsRepository implements IChatSettingsRepository {
 
     await getTursoClient().execute({
       sql: `INSERT INTO chat_settings
-              (id, history_mode, max_history_messages, max_response_tokens, summary_model)
-            VALUES (?, ?, ?, ?, ?)
+              (id, history_mode, max_history_messages, max_response_tokens, summary_model, provider)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               history_mode = excluded.history_mode,
               max_history_messages = excluded.max_history_messages,
               max_response_tokens = excluded.max_response_tokens,
-              summary_model = excluded.summary_model`,
+              summary_model = excluded.summary_model,
+              provider = excluded.provider`,
       args: [
         SINGLETON_ID,
         normalized.historyMode,
         normalized.maxHistoryMessages,
         normalized.maxResponseTokens,
         normalized.summaryModel,
+        normalized.provider,
       ],
     });
 

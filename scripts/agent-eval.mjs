@@ -2,16 +2,22 @@
  * agent-eval.mjs — ชุดทดสอบ agent อัตโนมัติ + วัด input token
  *
  * รัน dev server ก่อน (npx next dev -p 3210) แล้ว:
- *   node scripts/agent-eval.mjs [model] [baseUrl]
+ *   node scripts/agent-eval.mjs [provider] [model] [baseUrl]
  * ตัวอย่าง:
- *   node scripts/agent-eval.mjs anthropic/claude-sonnet-4.6 http://localhost:3210
+ *   node scripts/agent-eval.mjs wavespeed minimax/minimax-m2.7
+ *   node scripts/agent-eval.mjs opencode space-bunny-free
+ *   node scripts/agent-eval.mjs ninerouter nvidia/nvidia/nemotron-3-ultra-550b-a55b
+ *
+ * ต้องใส่ provider ให้ตรงกับ model — ไม่งั้นคู่ไม่ตรงแล้วจะถูก remap
+ * ให้เป็น default ของ provider (ผลลัพธ์จะไม่ตรงกับโมเดลที่สั่ง)
  *
  * ตรวจ: (1) AI เรียก tool ถูกตัว (2) ข้อมูลลง Turso ถูก (3) prompt/cached tokens ต่อ turn
  * ใช้ workspace ชื่อ "eval-jarvis" (ลบทิ้งต้น/ปลายการทดสอบ) — ไม่แตะข้อมูลจริง
  */
 
-const MODEL = process.argv[2] || "anthropic/claude-sonnet-4.6";
-const BASE = process.argv[3] || "http://localhost:3210";
+const PROVIDER = process.argv[2] || "wavespeed";
+const MODEL = process.argv[3] || "";
+const BASE = process.argv[4] || "http://localhost:3210";
 const WS = "eval-jarvis";
 const today = new Date().toISOString().slice(0, 10);
 
@@ -30,7 +36,11 @@ async function agent(prompt) {
   const res = await fetch(BASE + "/api/agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({
+      provider: PROVIDER,
+      ...(MODEL ? { model: MODEL } : {}),
+      messages: [{ role: "user", content: prompt }],
+    }),
   });
   const text = await res.text();
   const tools = [];
@@ -62,7 +72,9 @@ function record(name, prompt, r, pass, note) {
 }
 
 async function main() {
-  console.log(`\n🧪 agent-eval | model=${MODEL} | base=${BASE}\n`);
+  console.log(
+    `\n🧪 agent-eval | provider=${PROVIDER} | model=${MODEL || "(default ของ provider)"} | base=${BASE}\n`
+  );
 
   // cleanup ก่อน
   const pre = await findWsId(WS);

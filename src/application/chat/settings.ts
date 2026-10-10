@@ -4,10 +4,14 @@
  * Following Clean Architecture - this is in the Application layer
  */
 
+import { isKnownModel } from "@/src/application/ai/models";
 import {
-  DEFAULT_SUMMARY_MODEL,
-  isKnownModel,
-} from "@/src/application/ai/models";
+  DEFAULT_PROVIDER,
+  getCheapestModelForProvider,
+  getProvider,
+  resolveModelForProvider,
+  type ProviderId,
+} from "@/src/application/ai/providers";
 
 export type HistoryMode = "all" | "recent" | "summary";
 
@@ -23,13 +27,17 @@ export interface ChatSettings {
   maxResponseTokens: number | null;
   /** model ID ที่ใช้สรุปความจำเมื่อ historyMode = "summary" (ควรเป็นโมเดลถูกๆ) */
   summaryModel: string;
+  /** LLM provider ID — ค่าเริ่มต้น wavespeed */
+  provider: ProviderId;
 }
 
 export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   historyMode: "summary",
   maxHistoryMessages: 10,
   maxResponseTokens: 1024,
-  summaryModel: DEFAULT_SUMMARY_MODEL,
+  // โมเดลสรุปต้องอยู่ใน provider เดียวกันกับที่คุย — ถ้าไม่งั้นข้าม provider = upstream 404
+  summaryModel: getCheapestModelForProvider(DEFAULT_PROVIDER),
+  provider: DEFAULT_PROVIDER,
 };
 
 export const MIN_HISTORY_MESSAGES = 1;
@@ -70,12 +78,18 @@ export function normalizeChatSettings(
           defaults.maxResponseTokens ?? 1024
         );
 
+  const provider =
+    typeof value.provider === "string" && getProvider(value.provider)
+      ? value.provider
+      : defaults.provider;
+
+  // summaryModel ต้องเป็นของ provider เดียวกัน — ค่าที่บันทึกไว้จาก provider อื่นถือว่าใช้ไม่ได้
   const summaryModel =
     typeof value.summaryModel === "string" && isKnownModel(value.summaryModel)
-      ? value.summaryModel
-      : defaults.summaryModel;
+      ? resolveModelForProvider(value.summaryModel, provider)
+      : getCheapestModelForProvider(provider);
 
-  return { historyMode, maxHistoryMessages, maxResponseTokens, summaryModel };
+  return { historyMode, maxHistoryMessages, maxResponseTokens, summaryModel, provider };
 }
 
 function clampInt(

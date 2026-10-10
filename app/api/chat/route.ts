@@ -1,36 +1,44 @@
 /**
  * POST /api/chat
- * Proxy ไป WaveSpeed LLM (OpenAI-compatible) แบบ streaming
+ * Proxy ไป LLM provider (OpenAI-compatible) แบบ streaming
  * - API key อยู่ฝั่ง server เท่านั้น
  * - pass-through SSE body จาก upstream ตรงๆ (ไม่ parse/transform)
  * - ไม่แตะ session repository — ประวัติแชทเก็บฝั่ง client (localStorage)
+ * - รองรับ provider: wavespeed (default), ninerouter
  */
 
-import { createWaveSpeedClient } from "@/src/infrastructure/ai/WaveSpeedClient";
-import { DEFAULT_MODEL } from "@/src/application/ai/models";
+import { DEFAULT_PROVIDER, getProvider, resolveModelForProvider } from "@/src/application/ai/providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const VALID_ROLES = new Set(["user", "assistant", "system"]);
 
-export async function POST(req: Request) {
-  const client = createWaveSpeedClient();
-  if (!client) {
-    return Response.json(
-      { error: "ยังไม่ได้ตั้งค่า WAVESPEED_API_KEY ในไฟล์ .env.local" },
-      { status: 500 }
-    );
-  }
+function getClient(providerId: string) {
+  const provider = getProvider(providerId);
+  return provider.createClient();
+}
 
-  let body: { messages?: unknown; model?: unknown; maxTokens?: unknown };
+export async function POST(req: Request) {
+  let body: { messages?: unknown; model?: unknown; maxTokens?: unknown; provider?: unknown };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "รูปแบบคำขอไม่ถูกต้อง" }, { status: 400 });
   }
 
-  const { messages, model, maxTokens } = body;
+  const { messages, model, maxTokens, provider } = body;
+  const providerId =
+    typeof provider === "string" && provider ? getProvider(provider).id : DEFAULT_PROVIDER;
+  const providerInfo = getProvider(providerId);
+
+  const client = getClient(providerId);
+  if (!client) {
+    return Response.json(
+      { error: `ยังไม่ได้ตั้งค่า ${providerInfo.envVar} ในไฟล์ .env.local` },
+      { status: 500 }
+    );
+  }
 
   const isValidMessages =
     Array.isArray(messages) &&
@@ -59,10 +67,15 @@ export async function POST(req: Request) {
       ? maxTokens
       : undefined;
 
+  const modelId = resolveModelForProvider(
+    typeof model === "string" && model ? model : undefined,
+    providerId
+  );
+
   try {
     const upstream = await client.streamChatCompletion(
       {
-        model: typeof model === "string" && model ? model : DEFAULT_MODEL,
+        model: modelId,
         messages: messages.map(({ role, content }) => ({ role, content })),
         stream: true,
         // ขอ usage จริง (prompt/completion tokens) มากับ chunk สุดท้ายของ stream
@@ -75,7 +88,7 @@ export async function POST(req: Request) {
 
     if (!upstream.ok || !upstream.body) {
       const detail = await upstream.text().catch(() => "");
-      console.error("WaveSpeed API error:", upstream.status, detail);
+      console.error(`${providerInfo.label} API error:`, upstream.status, detail);
       return Response.json(
         { error: "เกิดข้อผิดพลาดจาก AI กรุณาลองใหม่อีกครั้ง" },
         { status: upstream.status || 502 }
@@ -96,7 +109,7 @@ export async function POST(req: Request) {
       return new Response(null, { status: 499 });
     }
 
-    console.error("Error calling WaveSpeed API:", error);
+    console.error(`Error calling ${providerInfo.label} API:`, error);
     return Response.json(
       { error: "เชื่อมต่อ AI ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" },
       { status: 502 }

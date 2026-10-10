@@ -28,6 +28,16 @@ export interface ModelGroup {
 
 export const DEFAULT_MODEL = "minimax/minimax-m2.7";
 
+/** 9router (Virtual Ocean) default model */
+export const NINE_ROUTER_DEFAULT_MODEL = "nvidia/nvidia/nemotron-3-ultra-550b-a55b";
+
+/**
+ * OpenCode Zen default model
+ * ⚠️ free ตัวอื่นใน Zen โดน 403 ("free tier can only be used from within OpenCode")
+ *    ตัวเดียวที่เรียกจากนอกได้จริงคือ space-bunny-free — ยืนยันแล้วว่ารองรับ tool-calling
+ */
+export const OPENCODE_DEFAULT_MODEL = "space-bunny-free";
+
 export const MODEL_OPTIONS: ModelOption[] = [
   // ── MiniMax ──
   {
@@ -131,6 +141,227 @@ export const MODEL_OPTIONS: ModelOption[] = [
     description: "เก่งโค้ด/คณิต/งาน agent ระดับท็อป context 1M ราคาคุ้ม",
     vendor: "DeepSeek",
     pricing: { inputPerMTok: 1.84, outputPerMTok: 3.66 },
+  },
+  // ── 9router
+  // ⚠️ ส่วนนี้ generate โดย scripts/sync-ninerouter-models.ts — อย่าแก้เอง
+  // ที่มาของชื่อโมเดลฟรี: models.dev (provider "opencode", cost 0 = ฟรี)
+  // ⚠️ oc/* ที่ไม่ใช่ space-bunny-free จะได้ 403 — OpenCode บังคับให้เรียกจากใน OpenCode เท่านั้น
+  //    การมีชื่อในรายการจึงไม่ได้แปลว่าเรียกได้ ให้ถือว่าเป็นตัวเลือกสำรอง
+  {
+    id: "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+    label: "Nemotron 3 Ultra",
+    description: "9router (Virtual Ocean) — เร็ว ราคาถูก context 128K",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0.5, outputPerMTok: 1.5 },
+  },
+  {
+    id: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+    label: "Nemotron 3 Ultra (ฟรี)",
+    description: "alias ฟรีของ Nemotron บน 9router — context 128K",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "openrouter/auto:free",
+    label: "Auto Router (ฟรี)",
+    description: "ให้ 9router เลือกโมเดลฟรีเองอัตโนมัติ (ไม่ต้องผูกบัญชี) — ตัวที่ได้จะเปลี่ยนตามเวลา",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "openrouter/auto",
+    label: "Auto Router",
+    description: "ให้ 9router เลือกโมเดลเองอัตโนมัติ (เสียเงิน) — คุณภาพ/ราคาขึ้นกับตัวที่ถูก route",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/space-bunny-free",
+    label: "Space Bunny (ฟรี)",
+    description: "โมเดลฟรีตัวเดียวใน oc/ ที่เรียกได้โดยไม่ต้องผูกบัญชี — ตัวอื่นโดน 403",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+
+  // ── โมเดลฟรีจาก OpenCode ผ่าน 9router (oc/*) ──
+  // ⚠️ 9router บังคับให้เรียก oc/* จากใน OpenCode เท่านั้น → 403 FreeTierError
+  //    ตัวเหล่านี้จึงยังใช้ไม่ได้จริง มีไว้รอผูกบัญชี — ใช้งานจริงให้เลือก provider OpenCode
+  {
+    id: "oc/big-pickle",
+    label: "Big Pickle",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/exo-free",
+    label: "Exo Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/ling-3.0-flash-fin-free",
+    label: "Ling 3.0 Flash Fin Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/ling-3.1-flash-free",
+    label: "Ling 3.1 Flash Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/longcat-2.5-preview-free",
+    label: "LongCat 2.5 Preview Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/mimo-v2.6-flash-free",
+    label: "MiMo-V2.6-Flash Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/muse-spark-1.2-contributor-free",
+    label: "Muse Spark 1.2 Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/muse-spark-1.3-contributor-free",
+    label: "Muse Spark 1.3 Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/nemotron-3-ultra-free",
+    label: "Nemotron 3 Ultra Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/nemotron-3.5-lightning-free",
+    label: "Nemotron 3.5 Lightning Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/step-5-preview-free",
+    label: "Step 5 Preview Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+
+  // ── OpenCode Zen (เรียกตรง ไม่ต้องผูกบัญชี upstream) ──
+  {
+    id: "space-bunny-free",
+    label: "Space Bunny (ฟรี)",
+    description: "OpenCode Zen — ฟรี เรียกได้จริงจากนอก รองรับ tool-calling (ค่าเริ่มต้น)",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "glm-5.3-flash",
+    label: "GLM 5.3 Flash",
+    description: "OpenCode Zen — ถูก ตอบเร็ว รองรับ tool-calling (เสียเงิน)",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0.15, outputPerMTok: 0.5 },
+  },
+  {
+    id: "kimi-k3",
+    label: "Kimi K3",
+    description: "OpenCode Zen — รองรับ tool-calling และ reasoning (เสียเงิน)",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 3, outputPerMTok: 15 },
+  },
+  {
+    id: "big-pickle",
+    label: "Big Pickle",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 200K, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "exo-free",
+    label: "Exo Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "ling-3.0-flash-fin-free",
+    label: "Ling 3.0 Flash Fin Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 262K, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "ling-3.1-flash-free",
+    label: "Ling 3.1 Flash Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 262K, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "longcat-2.5-preview-free",
+    label: "LongCat 2.5 Preview Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "mimo-v2.6-flash-free",
+    label: "MiMo-V2.6-Flash Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 200K, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "muse-spark-1.2-contributor-free",
+    label: "Muse Spark 1.2 Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "muse-spark-1.3-contributor-free",
+    label: "Muse Spark 1.3 Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "nemotron-3-ultra-free",
+    label: "Nemotron 3 Ultra Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "nemotron-3.5-lightning-free",
+    label: "Nemotron 3.5 Lightning Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 262K, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "step-5-preview-free",
+    label: "Step 5 Preview Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
 ];
 

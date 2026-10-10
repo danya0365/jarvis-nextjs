@@ -27,6 +27,11 @@ import {
   calculateCostUsd,
 } from "@/src/application/ai/models";
 import {
+  DEFAULT_PROVIDER,
+  resolveModelForProvider,
+  type ProviderId,
+} from "@/src/application/ai/providers";
+import {
   estimateTokens,
   estimateMessagesTokens,
 } from "@/src/application/ai/tokens";
@@ -209,6 +214,19 @@ export class ChatPresenter {
       return await this.repository.update(id, { model });
     } catch (error) {
       console.error("Error setting session model:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Change the provider used by a session
+   * ⚠️ model เดิมของ session อาจไม่รองรับ provider ใหม่ — repo จะ remap ให้เอง
+   */
+  async setSessionProvider(id: string, provider: ProviderId): Promise<ChatSession> {
+    try {
+      return await this.repository.update(id, { provider });
+    } catch (error) {
+      console.error("Error setting session provider:", error);
       throw error;
     }
   }
@@ -443,6 +461,7 @@ export class ChatPresenter {
           memoryUpToCount,
           settings.maxHistoryMessages,
           settings.summaryModel,
+          session.provider,
           signal
         );
         if (folded) {
@@ -472,6 +491,7 @@ export class ChatPresenter {
           messages: contextPayload,
           model: session.model,
           maxTokens: settings.maxResponseTokens ?? undefined,
+          provider: session.provider || DEFAULT_PROVIDER,
         }),
         signal,
       });
@@ -570,6 +590,7 @@ export class ChatPresenter {
       session.memoryUpToCount ?? 0,
       settings.maxHistoryMessages,
       settings.summaryModel,
+      session.provider,
       signal
     );
 
@@ -599,16 +620,20 @@ export class ChatPresenter {
     startCount: number,
     keepRecent: number,
     summaryModel: string,
+    providerId: ProviderId,
     signal?: AbortSignal
   ): Promise<{ memory: string; memoryUpToCount: number } | null> {
     const foldUpTo = messages.length - keepRecent;
     if (foldUpTo <= startCount) return null; // ไม่มีข้อความเก่าเกิน window ให้พับ
 
+    // summary ต้องยิง provider เดียวกับ session + model ที่ provider นั้นรองรับ
+    const modelToUse = resolveModelForProvider(summaryModel, providerId);
     const toFold = messages.slice(startCount, foldUpTo);
     const summary = await this.requestSummary(
       existingMemory ?? "",
       toFold,
-      summaryModel,
+      modelToUse,
+      providerId,
       signal
     );
     if (!summary) return null;
@@ -622,7 +647,7 @@ export class ChatPresenter {
       try {
         await this.usageLedger.append({
           date: localDateString(),
-          model: summaryModel,
+          model: modelToUse,
           promptTokens: summary.usage.promptTokens,
           completionTokens: summary.usage.completionTokens,
           estimated: false,
@@ -644,6 +669,7 @@ export class ChatPresenter {
     existingMemory: string,
     messagesToFold: ChatMessage[],
     summaryModel: string,
+    providerId: ProviderId,
     signal?: AbortSignal
   ): Promise<{ memory: string; usage: SseStreamResult["usage"] } | null> {
     if (messagesToFold.length === 0) return null;
@@ -670,6 +696,8 @@ export class ChatPresenter {
           ],
           model: summaryModel,
           maxTokens: SUMMARY_MAX_TOKENS,
+          // สรุปด้วย provider เดียวกับ session — ข้าม provider = upstream 404
+          provider: providerId,
         }),
         signal,
       });

@@ -1,25 +1,28 @@
 /**
  * POST /api/agent
  * Agentic loop — ให้ jarvis เรียก tool query/แก้ข้อมูล workspace เองได้
- * - รับ messages (text ปกติจาก client: memory + history) + model + maxTokens
- * - loop: เรียก WaveSpeed (non-streaming) → ถ้า tool_calls → executeTool แตะ Turso → วน
+ * - รับ messages (text ปกติจาก client: memory + history) + model + maxTokens + provider
+ * - loop: เรียก LLM (non-streaming) → ถ้า tool_calls → executeTool แตะ Turso → วน
  *         ถ้าไม่มี → stream คำตอบสุดท้ายเป็น SSE
  * - SSE ส่งกลับ: content delta (OpenAI-compatible), usage, และ event tool/error เฉพาะของ jarvis
  * ⚠️ tool รันฝั่ง server เท่านั้น (Turso repo) — API key/token ไม่หลุดไป client
  */
 
-import { createWaveSpeedClient } from "@/src/infrastructure/ai/WaveSpeedClient";
 import type {
-  WaveSpeedChatMessage,
-  WaveSpeedCompletion,
-} from "@/src/infrastructure/ai/WaveSpeedClient";
+  OpenAIChatMessage,
+  OpenAICompletion,
+} from "@/src/infrastructure/ai/OpenAICompatibleClient";
 import {
   WORKSPACE_TOOLS,
   executeTool,
 } from "@/src/infrastructure/ai/workspaceTools";
 import { TursoWorkspaceRepository } from "@/src/infrastructure/repositories/turso/TursoWorkspaceRepository";
 import { TursoUserProfileRepository } from "@/src/infrastructure/repositories/turso/TursoUserProfileRepository";
-import { DEFAULT_MODEL } from "@/src/application/ai/models";
+import {
+  DEFAULT_PROVIDER,
+  getProvider,
+  resolveModelForProvider,
+} from "@/src/application/ai/providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,23 +30,32 @@ export const dynamic = "force-dynamic";
 const VALID_ROLES = new Set(["user", "assistant", "system"]);
 const MAX_AGENT_STEPS = 5;
 
-export async function POST(req: Request) {
-  const client = createWaveSpeedClient();
-  if (!client) {
-    return Response.json(
-      { error: "ยังไม่ได้ตั้งค่า WAVESPEED_API_KEY ในไฟล์ .env.local" },
-      { status: 500 }
-    );
-  }
+function getClient(providerId: string) {
+  const provider = getProvider(providerId);
+  return provider.createClient();
+}
 
-  let body: { messages?: unknown; model?: unknown; maxTokens?: unknown };
+export async function POST(req: Request) {
+  let body: { messages?: unknown; model?: unknown; maxTokens?: unknown; provider?: unknown };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "รูปแบบคำขอไม่ถูกต้อง" }, { status: 400 });
   }
 
-  const { messages, model, maxTokens } = body;
+  const { messages, model, maxTokens, provider } = body;
+  const providerId =
+    typeof provider === "string" && provider ? getProvider(provider).id : DEFAULT_PROVIDER;
+
+  const client = getClient(providerId);
+  if (!client) {
+    return Response.json(
+      {
+        error: `ยังไม่ได้ตั้งค่า ${getProvider(providerId).envVar} ในไฟล์ .env.local`,
+      },
+      { status: 500 }
+    );
+  }
 
   const isValid =
     Array.isArray(messages) &&
@@ -62,8 +74,10 @@ export async function POST(req: Request) {
     );
   }
 
-  const modelId =
-    typeof model === "string" && model ? model : DEFAULT_MODEL;
+  const modelId = resolveModelForProvider(
+    typeof model === "string" && model ? model : undefined,
+    providerId
+  );
   const maxTokensValue =
     typeof maxTokens === "number" &&
     Number.isInteger(maxTokens) &&
@@ -100,7 +114,7 @@ export async function POST(req: Request) {
           workspaces.length > 0
             ? `workspace ที่มี: ${workspaces.map((w) => w.name).join(", ")}`
             : "ยังไม่มี workspace (ใช้ create_workspace เพื่อสร้าง)";
-        const convo: WaveSpeedChatMessage[] = [
+        const convo: OpenAIChatMessage[] = [
           {
             role: "system",
             content: `${SYSTEM_PROMPT}\n\nวันนี้คือ ${today}\n${wsLine}`,
@@ -113,7 +127,7 @@ export async function POST(req: Request) {
                 },
               ]
             : []),
-          ...(messages as { role: WaveSpeedChatMessage["role"]; content: string }[]).map(
+          ...(messages as { role: OpenAIChatMessage["role"]; content: string }[]).map(
             (m) => ({ role: m.role, content: m.content })
           ),
         ];
@@ -124,7 +138,7 @@ export async function POST(req: Request) {
 
         for (let step = 0; step < MAX_AGENT_STEPS; step++) {
           const isLast = step === MAX_AGENT_STEPS - 1;
-          const completion: WaveSpeedCompletion = await client.chatCompletion(
+          const completion: OpenAICompletion = await client.chatCompletion(
             {
               model: modelId,
               messages: convo,
@@ -221,7 +235,6 @@ export async function POST(req: Request) {
 }
 
 // system prompt แบบคงที่ (ไม่มี workspace list/วันที่แบบ dynamic ที่ทำลาย cache)
-// — AI เรียก list_workspaces เองเมื่อต้องการรู้ว่ามี workspace อะไร
 const SYSTEM_PROMPT = [
   "คุณคือ jarvis ผู้ช่วยส่วนตัวของผู้ใช้ ตอบเป็นภาษาไทย",
   "",

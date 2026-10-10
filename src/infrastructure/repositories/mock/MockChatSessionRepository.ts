@@ -10,14 +10,15 @@ import {
   CreateChatSessionData,
   UpdateChatSessionData,
 } from "@/src/application/repositories/IChatSessionRepository";
-import { DEFAULT_MODEL } from "@/src/application/ai/models";
+import { DEFAULT_PROVIDER, resolveModelForProvider, type ProviderId } from "@/src/application/ai/providers";
 
 // Mock data for development
 const MOCK_CHAT_SESSIONS: ChatSession[] = [
   {
     id: "session-001",
     title: "ถามเรื่อง Next.js",
-    model: DEFAULT_MODEL,
+    provider: DEFAULT_PROVIDER,
+    model: resolveModelForProvider(undefined, DEFAULT_PROVIDER),
     messages: [
       {
         id: "msg-001",
@@ -39,7 +40,8 @@ const MOCK_CHAT_SESSIONS: ChatSession[] = [
   {
     id: "session-002",
     title: "แชทใหม่",
-    model: DEFAULT_MODEL,
+    provider: DEFAULT_PROVIDER,
+    model: resolveModelForProvider(undefined, DEFAULT_PROVIDER),
     messages: [],
     createdAt: "2026-06-09T09:00:00.000Z",
     updatedAt: "2026-06-09T09:00:00.000Z",
@@ -73,10 +75,13 @@ export class MockChatSessionRepository implements IChatSessionRepository {
     await this.delay(100);
 
     const now = new Date().toISOString();
+    // model ต้องอยู่ใน provider เดียวกันเสมอ — ไม่งั้น upstream จะตอบ 404
+    const provider = (data.provider || DEFAULT_PROVIDER) as ProviderId;
     const newSession: ChatSession = {
       id: `session-${Date.now()}`,
       title: data.title || "แชทใหม่",
-      model: data.model || DEFAULT_MODEL,
+      provider,
+      model: resolveModelForProvider(data.model, provider),
       messages: [],
       createdAt: now,
       updatedAt: now,

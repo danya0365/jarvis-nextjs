@@ -8,6 +8,7 @@ import { ChatSettingsPanel } from "@/src/presentation/components/chat/ChatSettin
 import { MemoryPanel } from "@/src/presentation/components/chat/MemoryPanel";
 import { WorkspacePanel } from "@/src/presentation/components/chat/WorkspacePanel";
 import { UserProfilePanel } from "@/src/presentation/components/chat/UserProfilePanel";
+import { getProvider, getModelsForProvider, type ProviderId } from "@/src/application/ai/providers";
 
 interface ChatViewProps {
   initialViewModel?: ChatViewModel;
@@ -18,6 +19,9 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
   const [state, actions] = useChatPresenter(initialViewModel);
 
   const viewModel = state.viewModel;
+  const activeProviderId = (state.activeSession?.provider ??
+    "wavespeed") as ProviderId;
+  const activeModels = getModelsForProvider(activeProviderId);
 
   // Loading state — รอ hydrate จาก localStorage
   if (state.loading) {
@@ -180,23 +184,49 @@ export function ChatView({ initialViewModel }: ChatViewProps) {
             </span>
           )}
 
-          <select
-            value={state.activeSession?.model ?? viewModel.defaultModel}
-            onChange={(e) => actions.setModel(e.target.value)}
-            disabled={!state.activeSession || state.isStreaming}
-            title="เลือกโมเดล AI"
-            className="max-w-44 sm:max-w-60 px-3 py-2 text-sm rounded-lg bg-card border border-input focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          >
-            {viewModel.modelGroups.map((group) => (
-              <optgroup key={group.vendor} label={group.vendor}>
-                {group.models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
-                  </option>
-                ))}
+          {/* Provider dropdown */}
+          {state.activeSession && (
+            <select
+              value={activeProviderId}
+              onChange={(e) => actions.setProvider(e.target.value as ProviderId)}
+              disabled={state.isStreaming}
+              title="เลือก LLM Provider"
+              className="max-w-36 sm:max-w-44 px-3 py-2 text-sm rounded-lg bg-card border border-input focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            >
+              <option value="wavespeed">WaveSpeed</option>
+              <option value="ninerouter">9router</option>
+              <option value="opencode">OpenCode Zen</option>
+            </select>
+          )}
+
+          {/* Model dropdown - filtered by provider */}
+          {state.activeSession && (
+            <select
+              value={
+                activeModels.includes(state.activeSession.model ?? "")
+                  ? state.activeSession.model
+                  : getProvider(activeProviderId).defaultModel
+              }
+              onChange={(e) => actions.setModel(e.target.value)}
+              disabled={state.isStreaming}
+              title="เลือกโมเดล AI"
+              className="max-w-44 sm:max-w-60 px-3 py-2 text-sm rounded-lg bg-card border border-input focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            >
+              <optgroup
+                key={getProvider(activeProviderId).label}
+                label={getProvider(activeProviderId).label}
+              >
+                {viewModel.modelGroups
+                  .flatMap((g) => g.models)
+                  .filter((m) => activeModels.includes(m.id))
+                  .map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
               </optgroup>
-            ))}
-          </select>
+            </select>
+          )}
 
           <button
             onClick={actions.toggleProfilePanel}

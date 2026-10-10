@@ -14,7 +14,12 @@ import {
   CreateChatSessionData,
   UpdateChatSessionData,
 } from "@/src/application/repositories/IChatSessionRepository";
-import { DEFAULT_MODEL } from "@/src/application/ai/models";
+import {
+  DEFAULT_PROVIDER,
+  getProvider,
+  resolveModelForProvider,
+  type ProviderId,
+} from "@/src/application/ai/providers";
 import { getTursoClient, ensureSchema } from "@/src/infrastructure/db/turso";
 
 export class TursoChatSessionRepository implements IChatSessionRepository {
@@ -38,10 +43,13 @@ export class TursoChatSessionRepository implements IChatSessionRepository {
   async create(data: CreateChatSessionData): Promise<ChatSession> {
     await ensureSchema();
     const now = new Date().toISOString();
+    // model ต้องอยู่ใน provider เดียวกันเสมอ — ไม่งั้น upstream จะตอบ 404
+    const provider = (data.provider || DEFAULT_PROVIDER) as ProviderId;
     const session: ChatSession = {
       id: crypto.randomUUID(),
       title: data.title || "แชทใหม่",
-      model: data.model || DEFAULT_MODEL,
+      provider,
+      model: resolveModelForProvider(data.model, provider),
       messages: [],
       createdAt: now,
       updatedAt: now,
@@ -49,11 +57,12 @@ export class TursoChatSessionRepository implements IChatSessionRepository {
 
     await getTursoClient().execute({
       sql: `INSERT INTO chat_sessions
-              (id, title, model, messages, memory, memory_up_to_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)`,
+              (id, title, provider, model, messages, memory, memory_up_to_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
       args: [
         session.id,
         session.title,
+        session.provider,
         session.model,
         JSON.stringify(session.messages),
         session.createdAt,
@@ -67,6 +76,16 @@ export class TursoChatSessionRepository implements IChatSessionRepository {
   async update(id: string, data: UpdateChatSessionData): Promise<ChatSession> {
     await ensureSchema();
 
+    // เปลี่ยน provider/model ต้องอยู่ในคู่ที่ provider รองรับ — resolve ก่อนเขียนลง DB
+    if (data.provider !== undefined || data.model !== undefined) {
+      const current = await this.getById(id);
+      if (!current) {
+        throw new Error("ไม่พบ session ที่ต้องการแก้ไข");
+      }
+      const providerId = (data.provider ?? current.provider) as ProviderId;
+      data = { ...data, model: resolveModelForProvider(data.model ?? current.model, providerId) };
+    }
+
     // build SET เฉพาะ field ที่ส่งมา + updated_at เสมอ
     const sets: string[] = [];
     const args: (string | number | null)[] = [];
@@ -74,6 +93,10 @@ export class TursoChatSessionRepository implements IChatSessionRepository {
     if (data.title !== undefined) {
       sets.push("title = ?");
       args.push(data.title);
+    }
+    if (data.provider !== undefined) {
+      sets.push("provider = ?");
+      args.push(data.provider);
     }
     if (data.model !== undefined) {
       sets.push("model = ?");
@@ -127,10 +150,14 @@ export class TursoChatSessionRepository implements IChatSessionRepository {
 /** map แถว SQL (snake_case) → ChatSession entity (camelCase) */
 function rowToSession(row: Row): ChatSession {
   const memoryUpToCount = row.memory_up_to_count;
+  // session เก่าอาจคู่ provider/model ไม่ตรงกัน (เช่น provider เปลี่ยนแต่ model ยังเป็นตัวเดิม)
+  // → resolve ให้เป็น model ที่ provider รองรับจริง ตอนอ่าน ไม่ต้องรอ migration
+  const providerId = String(row.provider) as ProviderId;
   return {
     id: String(row.id),
     title: String(row.title),
-    model: String(row.model),
+    provider: getProvider(providerId).id,
+    model: resolveModelForProvider(String(row.model), providerId),
     messages: parseMessages(row.messages),
     memory: row.memory === null ? undefined : String(row.memory),
     memoryUpToCount:

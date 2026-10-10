@@ -16,6 +16,8 @@ import {
   ChatSettings,
   DEFAULT_CHAT_SETTINGS,
 } from "@/src/application/chat/settings";
+import type { ProviderId } from "@/src/application/ai/providers";
+import { resolveModelForProvider } from "@/src/application/ai/providers";
 import { HttpWorkspaceRepository } from "@/src/infrastructure/repositories/http/HttpWorkspaceRepository";
 import type {
   Workspace,
@@ -96,6 +98,7 @@ export interface ChatPresenterActions {
   cancelRename: () => void;
   deleteSession: (id: string) => Promise<void>;
   setModel: (model: string) => Promise<void>;
+  setProvider: (provider: ProviderId) => Promise<void>;
   setInput: (value: string) => void;
   sendMessage: () => Promise<void>;
   stopStreaming: () => void;
@@ -345,6 +348,30 @@ export function useChatPresenter(
       }
     },
     [activeSessionId, loadData, presenter]
+  );
+
+  const setProvider = useCallback(
+    async (provider: ProviderId) => {
+      if (!activeSessionId) return;
+
+      try {
+        await presenter.setSessionProvider(activeSessionId, provider);
+        // summary model ของ provider เดิมใช้กับ provider ใหม่ไม่ได้
+        // → remap ไปตัวที่ provider ใหม่รองรับ
+        const remapped = resolveModelForProvider(settings.summaryModel, provider);
+        if (remapped !== settings.summaryModel) {
+          await presenter.saveSettings({ ...settings, summaryModel: remapped });
+        }
+        await loadData();
+      } catch (err) {
+        if (isMountedRef.current) {
+          const errorMessage = err instanceof Error ? err.message : "Unknown error";
+          setError(errorMessage);
+          console.error("Error setting session provider:", err);
+        }
+      }
+    },
+    [activeSessionId, loadData, presenter, settings]
   );
 
   const sendMessage = useCallback(async () => {
@@ -763,6 +790,7 @@ export function useChatPresenter(
       cancelRename,
       deleteSession,
       setModel,
+      setProvider,
       setInput,
       sendMessage,
       stopStreaming,

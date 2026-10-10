@@ -11,7 +11,11 @@ import {
   CreateChatSessionData,
   UpdateChatSessionData,
 } from "@/src/application/repositories/IChatSessionRepository";
-import { DEFAULT_MODEL } from "@/src/application/ai/models";
+import {
+  DEFAULT_PROVIDER,
+  resolveModelForProvider,
+  type ProviderId,
+} from "@/src/application/ai/providers";
 
 const STORAGE_KEY = "jarvis.chat.sessions";
 
@@ -29,11 +33,14 @@ export class LocalStorageChatSessionRepository
   async create(data: CreateChatSessionData): Promise<ChatSession> {
     const sessions = this.load();
     const now = new Date().toISOString();
+    // model ต้องอยู่ใน provider เดียวกันเสมอ — ไม่งั้น upstream จะตอบ 404
+    const provider = (data.provider || DEFAULT_PROVIDER) as ProviderId;
 
     const newSession: ChatSession = {
       id: crypto.randomUUID(),
       title: data.title || "แชทใหม่",
-      model: data.model || DEFAULT_MODEL,
+      provider,
+      model: resolveModelForProvider(data.model, provider),
       messages: [],
       createdAt: now,
       updatedAt: now,
@@ -54,6 +61,11 @@ export class LocalStorageChatSessionRepository
     const updatedSession: ChatSession = {
       ...sessions[index],
       ...data,
+      // เปลี่ยน provider แล้ว model เดิมอาจไม่รองรับ → ต้อง resolve ใหม่
+      model: resolveModelForProvider(
+        data.model ?? sessions[index].model,
+        (data.provider ?? sessions[index].provider) as ProviderId
+      ),
       updatedAt: new Date().toISOString(),
     };
 

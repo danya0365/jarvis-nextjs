@@ -53,6 +53,7 @@ async function bootstrap(): Promise<void> {
       `CREATE TABLE IF NOT EXISTS chat_sessions (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'wavespeed',
         model TEXT NOT NULL,
         messages TEXT NOT NULL DEFAULT '[]',
         memory TEXT,
@@ -67,7 +68,8 @@ async function bootstrap(): Promise<void> {
         history_mode TEXT NOT NULL,
         max_history_messages INTEGER NOT NULL,
         max_response_tokens INTEGER,
-        summary_model TEXT NOT NULL
+        summary_model TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'wavespeed'
       )`,
       `CREATE TABLE IF NOT EXISTS usage_ledger (
         id TEXT PRIMARY KEY,
@@ -125,4 +127,30 @@ async function bootstrap(): Promise<void> {
     ],
     "write"
   );
+
+  // Migration: Add provider column to existing chat_sessions if missing
+  try {
+    await db.execute("ALTER TABLE chat_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'wavespeed'");
+    console.log("Migration: Added provider column to chat_sessions");
+  } catch (e: unknown) {
+    const err = e as { message?: string };
+    if (err?.message?.includes("duplicate column")) {
+      // Column already exists, ignore
+    } else {
+      throw e;
+    }
+  }
+
+  // Migration: Add provider column to existing chat_settings if missing
+  try {
+    await db.execute("ALTER TABLE chat_settings ADD COLUMN provider TEXT NOT NULL DEFAULT 'wavespeed'");
+    console.log("Migration: Added provider column to chat_settings");
+  } catch (e: unknown) {
+    const err = e as { message?: string };
+    if (err?.message?.includes("duplicate column")) {
+      // Column already exists, ignore
+    } else {
+      throw e;
+    }
+  }
 }

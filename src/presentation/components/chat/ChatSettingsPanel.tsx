@@ -4,7 +4,9 @@ import type {
   ChatSettings,
   HistoryMode,
 } from "@/src/application/chat/settings";
+import type { ProviderId } from "@/src/application/ai/providers";
 import type { ModelGroup } from "@/src/application/ai/models";
+import { getModelsForProvider } from "@/src/application/ai/providers";
 
 interface ChatSettingsPanelProps {
   settings: ChatSettings;
@@ -24,6 +26,9 @@ export function ChatSettingsPanel({
   onClose,
   onUpdate,
 }: ChatSettingsPanelProps) {
+  // summary ต้องใช้ provider เดียวกับที่คุย — กรอง dropdown ตาม provider ที่เลือก
+  const summaryModels = getModelsForProvider(settings.provider);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
@@ -72,6 +77,31 @@ export function ChatSettingsPanel({
             </p>
           </div>
 
+          {/* Provider selection */}
+          <div>
+            <label
+              htmlFor="provider"
+              className="block text-sm font-medium mb-1.5"
+            >
+              LLM Provider
+            </label>
+            <select
+              id="provider"
+              value={settings.provider}
+              onChange={(e) =>
+                onUpdate({ provider: e.target.value as ProviderId })
+              }
+              className="w-full px-3 py-2 text-sm rounded-lg bg-background border border-input focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="wavespeed">WaveSpeed</option>
+              <option value="ninerouter">9router (Virtual Ocean)</option>
+              <option value="opencode">OpenCode Zen</option>
+            </select>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              เลือก API provider สำหรับการสนทนา
+            </p>
+          </div>
+
           {/* Summary model — แสดงเฉพาะโหมดสรุป */}
           {settings.historyMode === "summary" && (
             <div>
@@ -87,15 +117,21 @@ export function ChatSettingsPanel({
                 onChange={(e) => onUpdate({ summaryModel: e.target.value })}
                 className="w-full px-3 py-2 text-sm rounded-lg bg-background border border-input focus:outline-none focus:ring-2 focus:ring-ring"
               >
-                {modelGroups.map((group) => (
-                  <optgroup key={group.vendor} label={group.vendor}>
-                    {group.models.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+                {modelGroups.map((group) => {
+                  const options = group.models.filter((model) =>
+                    summaryModels.includes(model.id)
+                  );
+                  if (options.length === 0) return null;
+                  return (
+                    <optgroup key={group.vendor} label={group.vendor}>
+                      {options.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
               <p className="text-xs text-muted-foreground mt-1.5">
                 การสรุปก็มีค่าใช้จ่าย — แนะนำเลือกโมเดลถูกๆ

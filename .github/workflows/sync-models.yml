@@ -1,0 +1,74 @@
+name: Sync models
+
+# โมเดลฟรีจาก OpenCode ทุกตัวมี end-of-life ติดมาด้วย
+# ตัวใหม่เข้ามา/ตัวเก่าตาย ต้อง sync รายสัปดาห์ ไม่งั้น dropdown จะมีแต่ของเปล่า
+on:
+  schedule:
+    # วันจันทร์ 06:00 UTC = 13:00 เวลาไทย
+    - cron: "0 6 * * 1"
+  # กด sync มือได้จากหน้า Actions
+  workflow_dispatch:
+  # ที่ commit มาเอง — ตรวจว่ายังตรงกับต้นทาง
+  pull_request:
+    paths:
+      - "src/application/ai/models.ts"
+      - "scripts/sync-ninerouter-models.ts"
+
+permissions:
+  contents: write
+
+# ไม่ให้สองรอบชนกัน (รอบที่ค้างจะยังทำต่อ)
+concurrency:
+  group: sync-models
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # ── โหมดตรวจ (pull_request): แค่บอกว่าตรงไหม ไม่ commit ──
+      - name: Check catalog is in sync
+        if: github.event_name == 'pull_request'
+        run: |
+          npm run sync:models
+          if git diff --quiet -- src/application/ai/models.ts; then
+            echo "✅ ตรงกับ models.dev"
+          else
+            echo "❌ catalog ไม่ตรงกับ models.dev — รัน 'npm run sync:models' แล้ว commit"
+            git diff -- src/application/ai/models.ts
+            exit 1
+          fi
+
+      # ── โหมดเขียน (schedule / manual): sync แล้ว commit ถ้าเปลี่ยน ──
+      - name: Sync and commit if changed
+        id: commit
+        if: github.event_name != 'pull_request'
+        run: |
+          npm run sync:models
+
+          if git diff --quiet -- src/application/ai/models.ts; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "ไม่มีอะไรเปลี่ยน — ไม่ต้อง commit"
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/application/ai/models.ts
+          git commit -m "chore: sync โมเดลฟรีจาก models.dev"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # กันไว้ไม่ให้ bot commit ของที่พัง
+      - name: Verify build
+        if: steps.commit.outputs.changed == 'true' || github.event_name == 'pull_request'
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx next build

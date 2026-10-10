@@ -1,16 +1,15 @@
-/**
- * /api/sessions
- * GET  → list ทุก session (เรียง updatedAt ใหม่สุดก่อน)
- * POST → สร้าง session ใหม่ (body: CreateChatSessionData)
- * ⚠️ ข้อมูลจริงอยู่บน Turso — repo รันฝั่ง server เท่านั้น (token เป็นความลับ)
- */
-
 import { TursoChatSessionRepository } from "@/src/infrastructure/repositories/turso/TursoChatSessionRepository";
+import { getProvider, type ProviderId } from "@/src/application/ai/providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const repository = new TursoChatSessionRepository();
+
+/** provider ที่ส่งมาอาจเป็นค่าแปลก — resolve เป็น id ที่มีจริงใน registry (ไม่งั้นคืน undefined = ใช้ default) */
+function toProviderId(value: unknown): ProviderId | undefined {
+  return typeof value === "string" ? getProvider(value).id : undefined;
+}
 
 export async function GET() {
   try {
@@ -23,7 +22,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  let body: { title?: string; model?: string } = {};
+  let body: { title?: string; model?: string; provider?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -34,6 +33,7 @@ export async function POST(req: Request) {
     const session = await repository.create({
       title: typeof body.title === "string" ? body.title : undefined,
       model: typeof body.model === "string" ? body.model : undefined,
+      provider: toProviderId(body.provider),
     });
     return Response.json(session, { status: 201 });
   } catch (error) {
