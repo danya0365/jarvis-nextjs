@@ -194,20 +194,6 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "oc/exo-free",
-    label: "Exo Free",
-    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
-    vendor: "9router",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
-    id: "oc/ling-3.0-flash-fin-free",
-    label: "Ling 3.0 Flash Fin Free",
-    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
-    vendor: "9router",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
     id: "oc/ling-3.1-flash-free",
     label: "Ling 3.1 Flash Free",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
@@ -238,13 +224,6 @@ export const MODEL_OPTIONS: ModelOption[] = [
   {
     id: "oc/muse-spark-1.3-contributor-free",
     label: "Muse Spark 1.3 Free",
-    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
-    vendor: "9router",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
-    id: "oc/nemotron-3-ultra-free",
-    label: "Nemotron 3 Ultra Free",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
     vendor: "9router",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
@@ -294,20 +273,6 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "exo-free",
-    label: "Exo Free",
-    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
-    vendor: "OpenCode",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
-    id: "ling-3.0-flash-fin-free",
-    label: "Ling 3.0 Flash Fin Free",
-    description: "ฟรีชั่วคราวบน OpenCode Zen — context 262K, รองรับ tool",
-    vendor: "OpenCode",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
     id: "ling-3.1-flash-free",
     label: "Ling 3.1 Flash Free",
     description: "ฟรีชั่วคราวบน OpenCode Zen — context 262K, รองรับ tool",
@@ -338,13 +303,6 @@ export const MODEL_OPTIONS: ModelOption[] = [
   {
     id: "muse-spark-1.3-contributor-free",
     label: "Muse Spark 1.3 Free",
-    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
-    vendor: "OpenCode",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
-    id: "nemotron-3-ultra-free",
-    label: "Nemotron 3 Ultra Free",
     description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
     vendor: "OpenCode",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
