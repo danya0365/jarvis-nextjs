@@ -187,6 +187,13 @@ export const MODEL_OPTIONS: ModelOption[] = [
   // ⚠️ 9router บังคับให้เรียก oc/* จากใน OpenCode เท่านั้น → 403 FreeTierError
   //    ตัวเหล่านี้จึงยังใช้ไม่ได้จริง มีไว้รอผูกบัญชี — ใช้งานจริงให้เลือก provider OpenCode
   {
+    id: "oc/beam-free",
+    label: "Beam Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
     id: "oc/big-pickle",
     label: "Big Pickle",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
@@ -194,8 +201,15 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "oc/ling-3.1-flash-free",
-    label: "Ling 3.1 Flash Free",
+    id: "oc/deepseek-v4.1-flash-free",
+    label: "DeepSeek V4.1 Flash Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/glm-5.3-flash-free",
+    label: "GLM-5.3-Flash Free",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
     vendor: "9router",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
@@ -215,15 +229,8 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "oc/muse-spark-1.2-contributor-free",
-    label: "Muse Spark 1.2 Free",
-    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
-    vendor: "9router",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
-    id: "oc/muse-spark-1.3-contributor-free",
-    label: "Muse Spark 1.3 Free",
+    id: "oc/minimax-m3.1-flash-free",
+    label: "MiniMax M3.1 Flash Free",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
     vendor: "9router",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
@@ -236,8 +243,8 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "oc/step-5-preview-free",
-    label: "Step 5 Preview Free",
+    id: "oc/nemotron-3.5-super-vl-free",
+    label: "Nemotron 3.5 Super VL Free",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
     vendor: "9router",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
@@ -266,6 +273,13 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 3, outputPerMTok: 15 },
   },
   {
+    id: "beam-free",
+    label: "Beam Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
     id: "big-pickle",
     label: "Big Pickle",
     description: "ฟรีชั่วคราวบน OpenCode Zen — context 200K, รองรับ tool",
@@ -273,9 +287,16 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "ling-3.1-flash-free",
-    label: "Ling 3.1 Flash Free",
-    description: "ฟรีชั่วคราวบน OpenCode Zen — context 262K, รองรับ tool",
+    id: "deepseek-v4.1-flash-free",
+    label: "DeepSeek V4.1 Flash Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 200K, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "glm-5.3-flash-free",
+    label: "GLM-5.3-Flash Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 200K, รองรับ tool",
     vendor: "OpenCode",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
@@ -294,15 +315,8 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "muse-spark-1.2-contributor-free",
-    label: "Muse Spark 1.2 Free",
-    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
-    vendor: "OpenCode",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
-    id: "muse-spark-1.3-contributor-free",
-    label: "Muse Spark 1.3 Free",
+    id: "minimax-m3.1-flash-free",
+    label: "MiniMax M3.1 Flash Free",
     description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
     vendor: "OpenCode",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
@@ -315,8 +329,8 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "step-5-preview-free",
-    label: "Step 5 Preview Free",
+    id: "nemotron-3.5-super-vl-free",
+    label: "Nemotron 3.5 Super VL Free",
     description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
     vendor: "OpenCode",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
