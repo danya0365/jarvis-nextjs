@@ -201,13 +201,6 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "oc/crouton-alpha-free",
-    label: "Crouton Alpha Free",
-    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
-    vendor: "9router",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
     id: "oc/deepseek-v4.1-flash-free",
     label: "DeepSeek V4.1 Flash Free",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
@@ -224,6 +217,13 @@ export const MODEL_OPTIONS: ModelOption[] = [
   {
     id: "oc/glm-5.3-flash-free",
     label: "GLM-5.3-Flash Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/hy4-flash-free",
+    label: "Hy4 flash Free",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
     vendor: "9router",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
@@ -252,6 +252,13 @@ export const MODEL_OPTIONS: ModelOption[] = [
   {
     id: "oc/mimo-v2.6-flash-free",
     label: "MiMo-V2.6-Flash Free",
+    description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
+    vendor: "9router",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "oc/minimax-m3.1-flash-free",
+    label: "MiniMax M3.1 Flash Free",
     description: "ผ่าน 9router โดน 403 — รอผูกบัญชี (ผ่าน OpenCode เรียกได้)",
     vendor: "9router",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
@@ -308,13 +315,6 @@ export const MODEL_OPTIONS: ModelOption[] = [
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
   {
-    id: "crouton-alpha-free",
-    label: "Crouton Alpha Free",
-    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
-    vendor: "OpenCode",
-    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-  },
-  {
     id: "deepseek-v4.1-flash-free",
     label: "DeepSeek V4.1 Flash Free",
     description: "ฟรีชั่วคราวบน OpenCode Zen — context 200K, รองรับ tool",
@@ -332,6 +332,13 @@ export const MODEL_OPTIONS: ModelOption[] = [
     id: "glm-5.3-flash-free",
     label: "GLM-5.3-Flash Free",
     description: "ฟรีชั่วคราวบน OpenCode Zen — context 200K, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "hy4-flash-free",
+    label: "Hy4 flash Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
     vendor: "OpenCode",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
@@ -360,6 +367,13 @@ export const MODEL_OPTIONS: ModelOption[] = [
     id: "mimo-v2.6-flash-free",
     label: "MiMo-V2.6-Flash Free",
     description: "ฟรีชั่วคราวบน OpenCode Zen — context 200K, รองรับ tool",
+    vendor: "OpenCode",
+    pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+  },
+  {
+    id: "minimax-m3.1-flash-free",
+    label: "MiniMax M3.1 Flash Free",
+    description: "ฟรีชั่วคราวบน OpenCode Zen — context 1M, รองรับ tool",
     vendor: "OpenCode",
     pricing: { inputPerMTok: 0, outputPerMTok: 0 },
   },
